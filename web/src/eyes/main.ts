@@ -98,11 +98,41 @@ window.addEventListener('message', onMessage);
 document.addEventListener('message', onMessage as EventListener);
 
 // ---------- camera ----------
+let cameraLabel = '';
 async function startCamera() {
-  const stream = await navigator.mediaDevices.getUserMedia({
+  const base = { width: { ideal: 1280 }, height: { ideal: 720 } };
+  let stream = await navigator.mediaDevices.getUserMedia({
     audio: false,
-    video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+    video: { facingMode: { ideal: 'environment' }, ...base },
   });
+  // Prefer the ULTRA-WIDE back camera (0.5x): it fits the whole kiosk AND the whole hand in view.
+  // Hand tracking finds the palm first, so a palm out of frame = no finger. Wider view fixes that.
+  // Labels are only available after permission, so look now and switch if we find one. ?wide=0 skips this.
+  if (params.get('wide') !== '0') {
+    try {
+      const cams = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput');
+      const wide = cams.find((d) => /ultra\s*wide/i.test(d.label));
+      const current = stream.getVideoTracks()[0]?.getSettings().deviceId;
+      if (wide && wide.deviceId !== current) {
+        stream.getTracks().forEach((t) => t.stop());
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: false,
+            video: { deviceId: { exact: wide.deviceId }, ...base },
+          });
+        } catch {
+          // Ultra-wide refused: go back to the normal back camera.
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: false,
+            video: { facingMode: { ideal: 'environment' }, ...base },
+          });
+        }
+      }
+    } catch {
+      /* keep the default camera */
+    }
+  }
+  cameraLabel = stream.getVideoTracks()[0]?.label ?? '';
   video.srcObject = stream;
   await video.play();
 }
@@ -200,6 +230,8 @@ function draw() {
 
 // ---------- main loop ----------
 let lastVideoTime = -1;
+let lastHandAt = 0;
+const HAND_HOLD_MS = 350; // ride through short tracking dropouts
 let lastSent = 0;
 let frames = 0;
 let fpsT = performance.now();
@@ -212,6 +244,7 @@ function loop() {
     const res = landmarker.detectForVideo(video, now);
     const hand = res.landmarks?.[0];
     if (hand) {
+      lastHandAt = now;
       const tip = hover.correct(hand, now); // estimated touch point, not the raw hovering fingertip
       fingertip = { x: tip.x, y: tip.y };
       let minX = 1, minY = 1, maxX = 0, maxY = 0;
@@ -225,6 +258,8 @@ function loop() {
         send({ type: 'fingertip', x: tip.x, y: tip.y, t: Date.now() });
         lastSent = now;
       }
+    } else if (fingertip && now - lastHandAt < HAND_HOLD_MS) {
+      // Tracking blinked out for a moment: keep the last position instead of dropping the finger.
     } else {
       if (fingertip) send({ type: 'nohand', t: Date.now() });
       fingertip = null;
@@ -251,7 +286,7 @@ function loop() {
     fps = frames;
     frames = 0;
     fpsT = now;
-    if (debug) statusEl.textContent = `${fps} fps · ${fingertip ? 'hand' : 'no hand'} · ${inApp ? 'in app' : 'browser'}`;
+    if (debug) statusEl.textContent = `${fps} fps · ${fingertip ? 'hand' : 'no hand'} · ${cameraLabel || 'camera'} · ${inApp ? 'in app' : 'browser'}`;
   }
   draw();
   requestAnimationFrame(loop);
