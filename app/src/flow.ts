@@ -226,7 +226,7 @@ export class Flow {
   }
 
   private onFingerOnTarget() {
-    if (this.state === 'guiding') say('Tap.');
+    if (this.state === 'guiding') say('Press.');
   }
 
   private async plan(attempt = 0, internal = false, prefetched?: { jpeg: string; hash: string }): Promise<void> {

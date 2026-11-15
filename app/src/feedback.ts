@@ -118,15 +118,14 @@ function ringFor(distance: number): number {
   return RINGS.findIndex((r) => distance <= r.maxDist);
 }
 
-const STUCK_HINT_MS = 2000; // speak a direction if they haven't gotten closer for this long…
-const HINT_EVERY_MS = 2500; // …but no more often than this
+const HINT_EVERY_MS = 1800; // spoken direction cadence while searching (only when nothing else is being said)
 
 /**
  * The guidance loop, designed for blind users (see CLAUDE.md §6). Quiet by design:
  * - Searching: haptic rings (above). A soft beep rides along with each pulse, but only while
  *   nothing is being said, so sounds never pile on top of speech.
- * - Stuck (no progress for a few seconds): one short spoken hint, "left" / "a little up".
- * - On the button: ding + "Tap", then SILENCE until the next screen.
+ * - Words: every ~2 s a general direction ("up left", "a little down"), "almost" when right there.
+ * - On the button: ding + big buzz + "Press", then SILENCE until the next screen.
  * - Hand not in view: a soft blip now and then. No talking over instructions.
  * onOn fires once per target, when the fingertip first settles on the button.
  */
@@ -194,7 +193,7 @@ export class GuideLoop {
       if (now - this.onSince > 150) {
         this.announcedOn = true;
         playDing(); // success buzz + ding
-        this.onOn(); // says "Tap."
+        this.onOn(); // says "Press."
       }
       return 80;
     }
@@ -209,15 +208,12 @@ export class GuideLoop {
       play(beeps[Math.round(closeness * (beeps.length - 1))], 0.45);
     }
 
-    // Progress check: only hint when they're stuck, and never over other speech.
-    if (g.distance < this.bestDist - 0.02) {
-      this.bestDist = g.distance;
-      this.bestAt = now;
-    }
-    if (now - this.bestAt > STUCK_HINT_MS && now - this.lastHint > HINT_EVERY_MS && !isSpeaking()) {
+    // Words: a general direction every ~2 s ("up left", "a little down"), never over other speech.
+    // When they're right at the button but not quite on it, a calm "almost".
+    if (now - this.lastHint > HINT_EVERY_MS && !isSpeaking()) {
       this.lastHint = now;
-      this.bestAt = now;
-      say(direction(this.finger, target, g.distance), { rate: 1.15, priority: 'low' });
+      const word = g.distance < 0.05 ? 'almost' : direction(this.finger, target, g.distance);
+      say(word, { rate: 1.15, priority: 'low' });
     }
     return ring.pulseMs;
   }

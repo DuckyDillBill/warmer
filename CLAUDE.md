@@ -124,8 +124,9 @@ Designed for blind users. **Quiet by design:** in testing, overlapping sounds ma
 - **Searching = haptic rings** (`feedback.ts` RINGS): concentric distance rings around the button.
   Outer ring = light and slow; each smaller ring is stronger and faster, until it's almost violent
   right at the button. A soft beep rides along only while nothing is being said.
-- **Stuck hint:** if they haven't gotten closer for ~3.5 s, one short word: "left", "a little up".
-- **On the button** (center 60% for 150 ms): ding + success buzz + "Tap", then **silence until the next screen**.
+- **Words:** every ~2 s (when nothing else is being said) a general direction: "up left", "a little down";
+  "almost" when right at the button.
+- **On the button** (center 60% for 150 ms): ding + big buzz + **"Press"**, then **silence until the next screen**.
 - **After a tap:** "Got it. Fries." then the next screen's instruction starts with "Next: …".
 - **No hand in view:** a soft blip every 2 s. No talking over instructions.
 - **Tap detection:** finger reached the button, then left it for 0.6 s (works handheld), or `screenChanged`.
