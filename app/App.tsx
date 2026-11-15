@@ -15,7 +15,9 @@ import {
 import { File } from 'expo-file-system';
 import * as Haptics from 'expo-haptics';
 import { Eyes } from './src/bridge';
-import { EYES_URL } from './src/config';
+import { CONVEX_URL, EYES_URL } from './src/config';
+import { ConvexHttpClient } from 'convex/browser';
+import { anyApi } from 'convex/server';
 import { initAudio, say } from './src/feedback';
 import { Flow, type FlowState } from './src/flow';
 import { MOCK_CAMERA, MockBackend, MockEyes } from './src/mock';
@@ -88,6 +90,13 @@ export default function App() {
     flow.startFromAudio(b64, 'audio/mp4');
   }
 
+  // Demo helper: stop guiding and send the kiosk on the iPad back to its start screen.
+  function resetDemo() {
+    flow.stop();
+    if (CONVEX_URL) new ConvexHttpClient(CONVEX_URL).mutation(anyApi.demo.resetKiosk as any, {}).catch(() => {});
+    say('Reset. Hold the big button and say what you want.');
+  }
+
   const busy = state === 'planning';
   const big = recording ? 'Listening… let go when done' : state === 'idle' || state === 'done' || state === 'error' ? 'Hold to talk' : 'Hold to change order';
 
@@ -132,6 +141,7 @@ export default function App() {
         <Btn label="Type" onPress={() => setTyping(true)} hint="Type what you want instead of speaking" />
         <Btn label="Repeat" onPress={() => flow.repeat()} hint="Repeat the last instruction" />
         <Btn label="Retry" onPress={() => flow.retry()} hint="Read the screen again" />
+        <Btn label="Reset" onPress={resetDemo} hint="Restart the demo: clears the goal and sends the kiosk back to its start screen" />
         <Btn
           label={debug ? 'Debug on' : 'Debug'}
           onPress={() => {

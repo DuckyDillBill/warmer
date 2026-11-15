@@ -28,6 +28,9 @@ export default defineSchema({
     label: v.string(),
     updatedAt: v.number(),
   }),
+  // Demo control: the app's Reset button bumps resetAt; the kiosk restarts when it changes.
+  demo: defineTable({ resetAt: v.number() }),
+
   liveFrame: defineTable({
     jpeg: v.string(), // small base64 camera snapshot, ~2 per second
     updatedAt: v.number(),

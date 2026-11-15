@@ -63,6 +63,15 @@ let placing = false;
 const convexUrl = import.meta.env.VITE_CONVEX_URL;
 const convex = convexUrl ? new ConvexClient(convexUrl) : null;
 
+// The Warmer app's Reset button restarts this kiosk remotely (Convex `demo.state`).
+const loadedAt = Date.now();
+let lastReset = 0;
+convex?.onUpdate(anyApi.demo.state, {}, (row: { resetAt: number } | null) => {
+  if (!row || row.resetAt <= loadedAt || row.resetAt === lastReset) return;
+  lastReset = row.resetAt;
+  restart();
+});
+
 const app = document.getElementById('app')!;
 const money = (n: number) => '$' + n.toFixed(2);
 const total = () => cart.reduce((s, l) => s + l.price, 0) + roundedUp;
