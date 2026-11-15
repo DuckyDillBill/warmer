@@ -228,7 +228,7 @@ function restart() {
 
 app.addEventListener('click', (e) => {
   const el = (e.target as HTMLElement).closest('[data-act],[data-cat],[data-item],[data-key]') as HTMLElement | null;
-  if (!el) return;
+  if (!el || placing) return;
   const s = screen;
   if (el.dataset.cat) {
     const cat = MENU.find((c) => c.id === el.dataset.cat)!;
@@ -273,7 +273,7 @@ app.addEventListener('click', (e) => {
 // Hidden reset for demos: long-press the logo for 1.5 s.
 let pressTimer: number | undefined;
 app.addEventListener('pointerdown', (e) => {
-  if ((e.target as HTMLElement).closest('[data-logo]')) pressTimer = window.setTimeout(restart, 1500);
+  if (!placing && (e.target as HTMLElement).closest('[data-logo]')) pressTimer = window.setTimeout(restart, 1500);
 });
 app.addEventListener('pointerup', () => window.clearTimeout(pressTimer));
 app.addEventListener('pointercancel', () => window.clearTimeout(pressTimer));
