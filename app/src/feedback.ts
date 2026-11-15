@@ -42,44 +42,71 @@ export function playDing() {
   Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 }
 
+// ---------- speech: a queue, so a sentence is never cut off ----------
+// Blind users rely on every word. Normal messages wait their turn and play in order.
+// 'low' messages (hints like "left") are simply skipped if anything else is being said or queued.
+type Utterance = { text: string; rate: number; resolve: () => void };
+const queue: Utterance[] = [];
 let speaking = false;
+
 export function isSpeaking() {
-  return speaking;
+  return speaking || queue.length > 0;
 }
 
-/** Speak and resolve when finished. Interrupts whatever was being said. */
-export function say(text: string, opts: { rate?: number } = {}): Promise<void> {
-  if (!text) return Promise.resolve();
-  Speech.stop();
+function next() {
+  const u = queue.shift();
+  if (!u) {
+    speaking = false;
+    return;
+  }
   speaking = true;
+  const done = () => {
+    u.resolve();
+    next();
+  };
+  Speech.speak(u.text, { rate: u.rate, onDone: done, onStopped: done, onError: done });
+}
+
+/** Speak and resolve when finished. Queued behind anything already being said. */
+export function say(text: string, opts: { rate?: number; priority?: 'normal' | 'low' } = {}): Promise<void> {
+  if (!text) return Promise.resolve();
+  if (opts.priority === 'low' && isSpeaking()) return Promise.resolve();
   return new Promise((resolve) => {
-    const done = () => {
-      speaking = false;
-      resolve();
-    };
-    Speech.speak(text, { rate: opts.rate ?? 1.05, onDone: done, onStopped: done, onError: done });
+    queue.push({ text, rate: opts.rate ?? 1.0, resolve });
+    if (!speaking) next();
   });
 }
 
-const STYLES = [
-  Haptics.ImpactFeedbackStyle.Light,
-  Haptics.ImpactFeedbackStyle.Light,
-  Haptics.ImpactFeedbackStyle.Medium,
-  Haptics.ImpactFeedbackStyle.Heavy,
-];
+/** Drop anything not yet said (used when starting over). The current sentence still finishes. */
+export function clearSpeechQueue() {
+  while (queue.length) queue.shift()!.resolve();
+}
 
-const DIRECTION_EVERY_MS = 1600; // spoken correction cadence while searching
-const NO_HAND_BLIP_MS = 1200; // soft blip while the hand is out of view
-const NO_HAND_SPEAK_AFTER_MS = 2500; // then say so, at most every 8 s
+// Concentric rings around the button. Bigger ring = gentle and slow; smaller = stronger and faster,
+// until it's almost violent right at the edge of the button. Each ring has one fixed rhythm, so the
+// change is easy to feel as you cross into the next ring.
+type Ring = { maxDist: number; pulseMs: number; style: Haptics.ImpactFeedbackStyle; double: boolean };
+const RINGS: Ring[] = [
+  { maxDist: 0.05, pulseMs: 55, style: Haptics.ImpactFeedbackStyle.Heavy, double: true },
+  { maxDist: 0.1, pulseMs: 110, style: Haptics.ImpactFeedbackStyle.Heavy, double: false },
+  { maxDist: 0.17, pulseMs: 200, style: Haptics.ImpactFeedbackStyle.Medium, double: false },
+  { maxDist: 0.26, pulseMs: 330, style: Haptics.ImpactFeedbackStyle.Medium, double: false },
+  { maxDist: 0.38, pulseMs: 500, style: Haptics.ImpactFeedbackStyle.Light, double: false },
+  { maxDist: Infinity, pulseMs: 750, style: Haptics.ImpactFeedbackStyle.Light, double: false },
+];
+function ringFor(distance: number): number {
+  return RINGS.findIndex((r) => distance <= r.maxDist);
+}
+
+const STUCK_HINT_MS = 3500; // only speak a direction if they haven't gotten closer for this long
 
 /**
- * The guidance loop, designed for blind users (see CLAUDE.md §6):
- * - Searching: a constant beep, like a parking sensor. Closer = faster AND higher pitch, with a matching
- *   vibration on every beep that gets stronger as you get close.
- * - Every ~1.6 s, a short spoken correction for direction: "left", "up", "a little right".
- *   (Research: verbal corrections give precision, sound gives magnitude; use both.)
- * - On the button: a bright steady tone and a strong continuous buzz, plus "Tap" the first time.
- * - Hand not visible: a soft low blip, and after a moment "I can't see your hand".
+ * The guidance loop, designed for blind users (see CLAUDE.md §6). Quiet by design:
+ * - Searching: haptic rings (above). A soft beep rides along with each pulse, but only while
+ *   nothing is being said, so sounds never pile on top of speech.
+ * - Stuck (no progress for a few seconds): one short spoken hint, "left" / "a little up".
+ * - On the button: ding + "Tap", then SILENCE until the next screen.
+ * - Hand not in view: a soft blip now and then. No talking over instructions.
  * onOn fires once per target, when the fingertip first settles on the button.
  */
 export class GuideLoop {
@@ -87,14 +114,11 @@ export class GuideLoop {
   private target: Box | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private onSince = 0;
-  private inZone = false;
   private announcedOn = false;
-  private lastDirection = 0;
-  private lastDirectionWord = '';
-  private noHandSince = 0;
+  private bestDist = 1;
+  private bestAt = 0;
+  private lastHint = 0;
   private lastNoHandBlip = 0;
-  private lastNoHandSpeech = 0;
-  private lastOnTone = 0;
   sound = true;
 
   constructor(private onOn: () => void) {}
@@ -102,9 +126,9 @@ export class GuideLoop {
   set(finger: Point | null, target: Box | null) {
     if (target !== this.target) {
       this.announcedOn = false;
-      this.inZone = false;
       this.onSince = 0;
-      this.lastDirectionWord = '';
+      this.bestDist = 1;
+      this.bestAt = Date.now();
     }
     this.finger = finger;
     this.target = target;
@@ -131,66 +155,49 @@ export class GuideLoop {
   private tick(): number {
     const now = Date.now();
     const target = this.target;
-    if (!target) return 150;
+    // No target, or already told them "Tap": stay completely quiet until the next screen.
+    if (!target || this.announcedOn) return 150;
 
-    // Hand out of view: keep the user oriented instead of going silent.
     if (!this.finger) {
-      if (!this.noHandSince) this.noHandSince = now;
-      if (now - this.lastNoHandBlip > NO_HAND_BLIP_MS) {
+      if (now - this.lastNoHandBlip > 2000 && !isSpeaking()) {
         this.lastNoHandBlip = now;
-        if (this.sound) play(noHand, speaking ? 0.3 : 0.8);
+        if (this.sound) play(noHand, 0.5);
       }
-      if (now - this.noHandSince > NO_HAND_SPEAK_AFTER_MS && now - this.lastNoHandSpeech > 8000 && !speaking) {
-        this.lastNoHandSpeech = now;
-        say("I can't see your hand. Reach toward the screen.");
-      }
-      this.inZone = false;
       this.onSince = 0;
       return 150;
     }
-    this.noHandSince = 0;
 
     const g = guide(this.finger, target);
     if (g.state === 'on') {
       if (!this.onSince) this.onSince = now;
       if (now - this.onSince > 150) {
-        if (!this.inZone) {
-          this.inZone = true;
-          playDing();
-          if (!this.announcedOn) {
-            this.announcedOn = true;
-            this.onOn(); // says "Tap."
-          }
-        }
-        // Steady confirmation while the finger stays on: strong buzz + bright tone.
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-        if (this.sound && now - this.lastOnTone > 380) {
-          this.lastOnTone = now;
-          play(onTone, speaking ? 0.35 : 0.9);
-        }
+        this.announcedOn = true;
+        playDing(); // success buzz + ding
+        this.onOn(); // says "Tap."
       }
-      return 120;
+      return 80;
     }
-
-    // Searching: constant beep, faster and higher as you get closer.
     this.onSince = 0;
-    this.inZone = false;
-    const closeness = 1 - Math.min(1, g.distance / 0.55); // 0 far … 1 touching
-    const pitch = Math.round(closeness * (beeps.length - 1));
-    Haptics.impactAsync(STYLES[g.level]);
-    if (this.sound) play(beeps[pitch], speaking ? 0.35 : 1);
 
-    // Spoken direction, short and not too often.
-    if (!speaking && now - this.lastDirection > DIRECTION_EVERY_MS) {
-      const word = direction(this.finger, target, g.distance);
-      if (word) {
-        this.lastDirection = now;
-        // Don't nag with the exact same word every time once they're close.
-        if (word !== this.lastDirectionWord || g.state === 'far') say(word, { rate: 1.25 });
-        this.lastDirectionWord = word;
-      }
+    const ring = RINGS[ringFor(g.distance)];
+    Haptics.impactAsync(ring.style);
+    if (ring.double) setTimeout(() => Haptics.impactAsync(ring.style), 25);
+    if (this.sound && !isSpeaking()) {
+      const closeness = 1 - Math.min(1, g.distance / 0.55);
+      play(beeps[Math.round(closeness * (beeps.length - 1))], 0.45);
     }
-    return g.pulseMs;
+
+    // Progress check: only hint when they're stuck, and never over other speech.
+    if (g.distance < this.bestDist - 0.02) {
+      this.bestDist = g.distance;
+      this.bestAt = now;
+    }
+    if (now - this.bestAt > STUCK_HINT_MS && now - this.lastHint > STUCK_HINT_MS && !isSpeaking()) {
+      this.lastHint = now;
+      this.bestAt = now;
+      say(direction(this.finger, target, g.distance), { rate: 1.15, priority: 'low' });
+    }
+    return ring.pulseMs;
   }
 }
 

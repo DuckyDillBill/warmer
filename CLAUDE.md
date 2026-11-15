@@ -118,19 +118,19 @@ transcribeGoal({ audio /* base64 m4a */ }) -> { goal: string }
 - Tables: `screens { hash, summary, buttons, createdAt }`, `sessions { goal, history, status, createdAt }`.
 
 ## 6. Feel: the guidance (this is the product, tune it carefully)
-Designed for blind users. Research we followed: combine a constant sound for *how far* with short
-spoken corrections for *which way* (verbal = precision, sound = magnitude); users split between
-preferring haptics and audio, so do both.
-- **Searching:** a constant beep like a parking sensor (`feedback.ts`). Closer = faster and higher pitch
-  (8 pitches, `assets/beep0-7.wav`), with a vibration on every beep that gets stronger when close.
-- **Direction:** every ~1.6 s a short spoken word: "left", "up", "a little right" (camera frame, not mirrored).
-- **On the button** (center 60% for 150 ms): ding + "Tap" once, then a bright steady tone and a strong
-  continuous buzz while the finger stays on.
-- **No hand in view:** soft low blip; after 2.5 s "I can't see your hand. Reach toward the screen."
+Designed for blind users. **Quiet by design:** in testing, overlapping sounds made it unusable eyes-closed.
+- **Speech never gets cut off.** `say()` is a queue: every sentence finishes, in order. Hints are
+  low priority and are skipped if anything else is being said.
+- **Searching = haptic rings** (`feedback.ts` RINGS): concentric distance rings around the button.
+  Outer ring = light and slow; each smaller ring is stronger and faster, until it's almost violent
+  right at the button. A soft beep rides along only while nothing is being said.
+- **Stuck hint:** if they haven't gotten closer for ~3.5 s, one short word: "left", "a little up".
+- **On the button** (center 60% for 150 ms): ding + success buzz + "Tap", then **silence until the next screen**.
+- **After a tap:** "Got it. Fries." then the next screen's instruction starts with "Next: …".
+- **No hand in view:** a soft blip every 2 s. No talking over instructions.
 - **Tap detection:** finger reached the button, then left it for 0.6 s (works handheld), or `screenChanged`.
 - **Box accuracy:** Gemini gives box + exact center point; the camera page snaps the box to the button's
   real edges (`eyes/refine.ts`) and keeps it on the button as the phone moves (`eyes/tracker.ts`).
-- Smooth the fingertip (exponential moving average) so it doesn't jitter.
 
 **PIN pad:** the user types the PIN into a secure field **on the phone**. It stays in memory only,
 is never spoken, never logged, never sent to the server, and is cleared when the order ends.

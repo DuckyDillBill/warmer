@@ -4,7 +4,7 @@ import { ConvexHttpClient } from 'convex/browser';
 import { anyApi } from 'convex/server';
 import { CONVEX_URL } from './config';
 import type { Eyes } from './bridge';
-import { GuideLoop, say } from './feedback';
+import { clearSpeechQueue, GuideLoop, say } from './feedback';
 import type { Box, Point } from './guidance';
 import { inOnZone, smooth } from './guidance';
 
@@ -138,7 +138,8 @@ export class Flow {
     }
     if (this.state !== 'guiding') return;
     if (this.target && (this.loop.wasOn || this.reached)) {
-      say(this.target.label);
+      // Clear confirmation so a blind user knows the tap landed and a new screen is coming.
+      say(`Got it. ${this.target.label}.`);
       this.history.push(`Tapped "${this.target.label}"`);
     } else {
       this.history.push('The screen changed');
@@ -165,7 +166,8 @@ export class Flow {
       .then((id: string) => (this.sessionId = id))
       .catch((e: Error) => console.warn('session start failed', e));
     this.set('planning', `Goal: ${goal}`);
-    say(`Got it. ${goal}.`); // speak while we read the screen, don't wait for it
+    clearSpeechQueue();
+    say(`Okay. ${goal}.`); // speak while we read the screen, don't wait for it
     this.plan(0, false, prefetched);
   }
 
@@ -198,6 +200,7 @@ export class Flow {
   }
 
   stop() {
+    clearSpeechQueue();
     this.setTarget(null);
     this.goal = '';
     this.set('idle', 'Hold the button and say what you want.');
@@ -289,7 +292,9 @@ export class Flow {
         return;
       }
       if (!step.target) throw new Error('no target');
-      const words = [step.warning, step.say].filter(Boolean).join(' ');
+      // After the first step, start with "Next:" so it's obvious this is a new screen, not the old one.
+      const lead = this.history.length ? 'Next: ' : '';
+      const words = lead + [step.warning, step.say].filter(Boolean).join(' ');
       this.lastInstruction = words;
       this.setTarget({ label: step.target.label, box: step.target.box as Box });
       this.set('guiding', words || `Find ${step.target.label}`);
