@@ -74,8 +74,8 @@ export class MockBackend {
       const s = SCRIPT[Math.min(this.screen, SCRIPT.length - 1)];
       return { screenId: String(this.screen), summary: s.summary, buttons: s.buttons, cached: true };
     }
-    if (name === 'ai:nextStep') {
-      const s = SCRIPT[Math.min(Number(args.screenId), SCRIPT.length - 1)];
+    if (name === 'ai:nextStep' || name === 'ai:readAndPlan') {
+      const s = SCRIPT[Math.min(name === 'ai:readAndPlan' ? this.screen : Number(args.screenId), SCRIPT.length - 1)];
       const b = s.buttons.find((x) => x.label === s.target);
       return {
         target: b ? { label: b.label, box: b.box } : null,

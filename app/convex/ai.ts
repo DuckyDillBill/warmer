@@ -100,17 +100,28 @@ export const mapScreen = action({
 
     // 2) New screen → ask Gemini once.
     const out = await gemini([{ text: MAP_PROMPT }, { inline_data: { mime_type: 'image/jpeg', data: jpeg } }], VISION_MODELS());
-    const buttons: Button[] = (out.buttons ?? [])
-      .filter((b: any) => Array.isArray(b.box_2d) && b.box_2d.length === 4)
-      .map((b: any) => {
-        const [ymin, xmin, ymax, xmax] = b.box_2d.map((n: number) => n / 1000);
-        return { label: String(b.label ?? ''), kind: b.kind === 'digit' ? 'digit' : 'button', box: [clamp(xmin), clamp(ymin), clamp(xmax), clamp(ymax)] };
-      });
+    const buttons = toButtons(out);
     const summary = String(out.summary ?? 'Screen');
     const screenId = await ctx.runMutation(internal.screens.insert, { hash, summary, buttons });
     return { screenId, summary, buttons, cached: false };
   },
 });
+
+// Gemini's box_2d is [ymin, xmin, ymax, xmax] in 0–1000; the app only ever sees [x0, y0, x1, y1] in 0–1.
+function toButtons(out: any): Button[] {
+  return (out.buttons ?? [])
+    .filter((b: any) => Array.isArray(b.box_2d) && b.box_2d.length === 4)
+    .map((b: any) => {
+      const [ymin, xmin, ymax, xmax] = b.box_2d.map((n: number) => n / 1000);
+      return { label: String(b.label ?? ''), kind: b.kind === 'digit' ? 'digit' : 'button', box: [clamp(xmin), clamp(ymin), clamp(xmax), clamp(ymax)] };
+    });
+}
+
+const STEP_RULES = `Rules:
+- If this screen is a PIN pad and the PIN has not been entered yet (history doesn't say "PIN entered"), set "pin": true and "targetIndex": null. If the PIN was entered, pick OK/Enter.
+- If the screen is an upsell, add-on, donation, round-up, tip or subscription the goal didn't ask for, set "warning" to a short sentence that explains it and pick the decline button (e.g. "No thanks").
+- If the goal is complete (order confirmation / thank-you / done screen), set "done": true, "targetIndex": null and "doneSay" to a short sentence including any order number shown.
+- "say": what to tell them before guiding, max 8 words, e.g. "Burgers. Find it." Never read prices unless useful.`;
 
 const STEP_PROMPT = (goal: string, history: string[], summary: string, buttons: Button[]) => `You are guiding a blind person through a touchscreen, one tap at a time.
 Their goal: "${goal}"
@@ -166,5 +177,55 @@ export const transcribeGoal = action({
       { inline_data: { mime_type: mimeType ?? 'audio/mp4', data: audio } },
     ], STEP_MODELS());
     return { goal: String(out.goal ?? '').trim() };
+  },
+});
+
+// ---------- readAndPlan: the fast path ----------
+// One round trip instead of two. Seen this screen before (cache hit)? Only a quick text call to pick
+// the button. New screen? ONE vision call that both maps the buttons and picks the next one.
+// mapScreen + nextStep above stay as-is (the contract in CLAUDE.md §5); this is an extra, faster entry point.
+const READ_AND_PLAN_PROMPT = (goal: string, history: string[]) => `This photo was taken by a phone camera pointed at a touchscreen (a restaurant kiosk, card reader, self-checkout or appliance panel).
+You are guiding a blind person through it, one tap at a time.
+Their goal: "${goal}"
+What has happened so far: ${history.length ? history.map((h, i) => `${i + 1}. ${h}`).join(' ') : 'nothing yet'}
+
+1) List every tappable control visible ON THE SCREEN (ignore anything outside the screen and any hand or finger).
+For each: "label" (visible text, or 1–3 words if it's only an icon/picture), "kind" ("digit" for single number keys on a keypad, otherwise "button"),
+"box_2d": [ymin, xmin, ymax, xmax] normalized 0–1000 relative to the WHOLE photo, tight around the tappable area.
+Also "summary": one short line saying what this screen is.
+2) Pick the ONE button (by its index in your list) to tap next that moves them toward their goal.
+${STEP_RULES}
+Return JSON: {"summary": string, "buttons": [{"label": string, "kind": string, "box_2d": [number, number, number, number]}], "targetIndex": number|null, "say": string, "warning": string|null, "pin": boolean, "done": boolean, "doneSay": string|null}`;
+
+function toStep(out: any, buttons: Button[]): StepResult {
+  const idx = typeof out.targetIndex === 'number' ? out.targetIndex : null;
+  const b: Button | undefined = idx !== null ? buttons[idx] : undefined;
+  return {
+    target: b ? { label: b.label, box: b.box } : null,
+    say: String(out.say ?? ''),
+    warning: out.warning ? String(out.warning) : null,
+    pin: !!out.pin,
+    done: !!out.done,
+    doneSay: out.doneSay ? String(out.doneSay) : null,
+    digits: buttons.filter((x: Button) => x.kind === 'digit').map((x: Button) => ({ label: x.label, box: x.box })),
+  };
+}
+
+export const readAndPlan = action({
+  args: { jpeg: v.string(), hash: v.string(), goal: v.string(), history: v.array(v.string()) },
+  handler: async (ctx, { jpeg, hash, goal, history }): Promise<StepResult & { screenId: Id<'screens'>; cached: boolean }> => {
+    const recent: Doc<'screens'>[] = await ctx.runQuery(internal.screens.recent, {});
+    const hit = recent.find((s: Doc<'screens'>) => hamming(s.hash, hash) <= HASH_MATCH_BITS);
+    if (hit) {
+      const out = await gemini([{ text: STEP_PROMPT(goal, history, hit.summary, hit.buttons) }], STEP_MODELS());
+      return { ...toStep(out, hit.buttons), screenId: hit._id, cached: true };
+    }
+    const out = await gemini(
+      [{ text: READ_AND_PLAN_PROMPT(goal, history) }, { inline_data: { mime_type: 'image/jpeg', data: jpeg } }],
+      VISION_MODELS(),
+    );
+    const buttons = toButtons(out);
+    const screenId = await ctx.runMutation(internal.screens.insert, { hash, summary: String(out.summary ?? 'Screen'), buttons });
+    return { ...toStep(out, buttons), screenId, cached: false };
   },
 });

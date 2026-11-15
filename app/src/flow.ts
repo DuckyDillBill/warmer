@@ -104,7 +104,7 @@ export class Flow {
     this.plan();
   }
 
-  async start(goal: string) {
+  async start(goal: string, prefetched?: { jpeg: string; hash: string }) {
     goal = goal.trim();
     if (!goal) {
       say("Sorry, I didn't catch that. Hold the button and try again.");
@@ -121,17 +121,28 @@ export class Flow {
       .then((id: string) => (this.sessionId = id))
       .catch((e: Error) => console.warn('session start failed', e));
     this.set('planning', `Goal: ${goal}`);
-    await say(`Got it. ${goal}.`);
-    this.plan();
+    say(`Got it. ${goal}.`); // speak while we read the screen, don't wait for it
+    this.plan(0, false, prefetched);
   }
 
   /** Voice goal: audio recorded on the phone → Gemini transcription (via Convex) → start. */
   async startFromAudio(base64: string, mimeType = 'audio/mp4') {
     if (!this.client) return this.start('');
     this.set('planning', 'Listening…');
+    // While Gemini transcribes the voice, grab a frame and map the screen at the same time.
+    // That fills the screen cache, so the first step afterwards is a quick text-only call.
+    const client = this.client!;
+    const prefetch = this.eyes
+      .captureFrame()
+      .then(async (frame) => {
+        await client.action(api.ai.mapScreen, frame);
+        return frame;
+      })
+      .catch(() => undefined);
     try {
       const { goal } = await this.client.action(api.ai.transcribeGoal, { audio: base64, mimeType });
-      await this.start(goal);
+      const frame = goal ? await prefetch : undefined;
+      await this.start(goal, frame);
     } catch (e) {
       this.set('error', `Couldn't hear that: ${(e as Error).message}`);
       say("Sorry, I couldn't hear that. Try again.");
@@ -167,7 +178,7 @@ export class Flow {
     if (this.state === 'guiding') say('Tap.');
   }
 
-  private async plan(attempt = 0, internal = false): Promise<void> {
+  private async plan(attempt = 0, internal = false, prefetched?: { jpeg: string; hash: string }): Promise<void> {
     // Only one screen read at a time. Pressing the button again or a new goal while we're reading
     // just marks the read as stale; it gets redone with the latest goal when the current one returns.
     // (Parallel reads were burning through the Gemini rate limit.)
@@ -185,15 +196,14 @@ export class Flow {
     this.set('planning', 'Reading the screen…');
     try {
       const t0 = Date.now();
-      const frame = await this.eyes.captureFrame();
-      const map = await withTimeout(this.client.action(api.ai.mapScreen, frame), 15000, 'reading the screen');
-      const t1 = Date.now();
-      const step: Step = await withTimeout(
-        this.client.action(api.ai.nextStep, { goal: this.goal, history: this.history, screenId: map.screenId }),
-        10000,
-        'choosing the next button',
+      const frame = prefetched ?? (await this.eyes.captureFrame());
+      // One round trip: maps the screen (or uses the cache) and picks the next button together.
+      const step: Step & { cached?: boolean } = await withTimeout(
+        this.client.action(api.ai.readAndPlan, { ...frame, goal: this.goal, history: this.history }),
+        20000,
+        'reading the screen',
       );
-      console.log(`plan: frame+map ${t1 - t0}ms (cached: ${map.cached}), step ${Date.now() - t1}ms`);
+      console.log(`plan: ${Date.now() - t0}ms (cached screen: ${step.cached})`);
       this.planning = false;
       // The screen moved on while we were thinking: read it again, but at most twice in a row.
       // Without the cap, glare or a shaky phone can keep "Reading the screen…" going for minutes.
