@@ -62,7 +62,8 @@ export class Eyes {
     }
   };
 
-  captureFrame(timeoutMs = 4000): Promise<Frame> {
+  /** `crop`: optional normalized region of the camera frame to send instead of the whole frame. */
+  captureFrame(timeoutMs = 4000, crop?: Box): Promise<Frame> {
     const id = `f${++this.n}`;
     return new Promise((resolve, reject) => {
       const t = setTimeout(() => {
@@ -73,7 +74,7 @@ export class Eyes {
         clearTimeout(t);
         resolve(f);
       });
-      this.send({ type: 'captureFrame', id });
+      this.send({ type: 'captureFrame', id, ...(crop ? { crop } : {}) });
     });
   }
 

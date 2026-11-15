@@ -125,6 +125,15 @@ function toButtons(out: any): Button[] {
     });
 }
 
+type Crop = [number, number, number, number]; // region of the camera frame the photo was cut from
+/** Photo coordinates (0–1 of the cropped photo) → camera-frame coordinates (0–1 of the full frame). */
+function uncropBox(b: number[], c?: Crop): number[] {
+  if (!c) return b;
+  const w = c[2] - c[0];
+  const h = c[3] - c[1];
+  return [c[0] + b[0] * w, c[1] + b[1] * h, c[0] + b[2] * w, c[1] + b[3] * h];
+}
+
 const STEP_RULES = `Rules:
 - If this screen is a PIN pad and the PIN has not been entered yet (history doesn't say "PIN entered"), set "pin": true and "targetIndex": null. If the PIN was entered, pick OK/Enter.
 - If the screen is an upsell, add-on, donation, round-up, tip or subscription the goal didn't ask for, set "warning" to a short sentence that explains it and pick the decline button (e.g. "No thanks").
@@ -200,13 +209,14 @@ What has happened so far: ${history.length ? history.map((h, i) => `${i + 1}. ${
 1) List every tappable control visible ON THE SCREEN (ignore anything outside the screen and any hand or finger).
 For each: "label" (visible text, or 1–3 words if it's only an icon/picture), "kind" ("digit" for single number keys on a keypad, otherwise "button"),
 "box_2d": [ymin, xmin, ymax, xmax] normalized 0–1000 relative to the WHOLE photo, tight around the button's full visible shape (its colored background/border), not just its text.
-Also "summary": one short line saying what this screen is.
+Also "summary": one short line saying what this screen is,
+and "screen_2d": [ymin, xmin, ymax, xmax] (0–1000, whole photo) around the touchscreen display itself.
 2) Pick the ONE button (by its index in your list) to tap next that moves them toward their goal,
 and give "targetPoint": [y, x] (0–1000, whole photo) at the exact visual center of that button.
 ${STEP_RULES}
-Return JSON: {"summary": string, "buttons": [{"label": string, "kind": string, "box_2d": [number, number, number, number]}], "targetIndex": number|null, "targetPoint": [number, number]|null, "say": string, "warning": string|null, "pin": boolean, "done": boolean, "doneSay": string|null}`;
+Return JSON: {"summary": string, "buttons": [{"label": string, "kind": string, "box_2d": [number, number, number, number]}], "targetIndex": number|null, "targetPoint": [number, number]|null, "screen_2d": [number, number, number, number]|null, "say": string, "warning": string|null, "pin": boolean, "done": boolean, "doneSay": string|null}`;
 
-function toStep(out: any, buttons: Button[]): StepResult {
+function toStep(out: any, buttons: Button[], crop?: Crop): StepResult {
   const idx = typeof out.targetIndex === 'number' ? out.targetIndex : null;
   const b: Button | undefined = idx !== null ? buttons[idx] : undefined;
   let box = b?.box;
@@ -214,8 +224,9 @@ function toStep(out: any, buttons: Button[]): StepResult {
   // (or right next to) the box, re-center the box on it, keeping its size.
   const pt = out.targetPoint;
   if (b && box && Array.isArray(pt) && pt.length === 2) {
-    const py = clamp(pt[0] / 1000);
-    const px = clamp(pt[1] / 1000);
+    const [ppx, ppy] = uncropBox([clamp(pt[1] / 1000), clamp(pt[0] / 1000), 0, 0], crop);
+    const py = ppy;
+    const px = ppx;
     const [x0, y0, x1, y1] = box;
     const w = x1 - x0;
     const h = y1 - y0;
@@ -241,8 +252,15 @@ export const readAndPlan = action({
     goal: v.string(),
     history: v.array(v.string()),
     avoidScreenId: v.optional(v.id('screens')), // the screen we were just on: never reuse it right after a tap
+    // If the app sent a crop of the camera frame (just the kiosk), this is where it was cut from.
+    // Everything we store and return stays in full camera-frame coordinates.
+    crop: v.optional(v.array(v.number())),
   },
-  handler: async (ctx, { jpeg, hash, goal, history, avoidScreenId }): Promise<StepResult & { screenId: Id<'screens'>; cached: boolean }> => {
+  handler: async (
+    ctx,
+    { jpeg, hash, goal, history, avoidScreenId, crop },
+  ): Promise<StepResult & { screenId: Id<'screens'>; cached: boolean; screen: number[] | null }> => {
+    const c = crop && crop.length === 4 ? (crop as Crop) : undefined;
     const recent: Doc<'screens'>[] = await ctx.runQuery(internal.screens.recent, {});
     // Kiosk screens share a layout, so their coarse hashes can be close. Match strictly, and skip the
     // screen we just left, otherwise the old buttons come back and the target box never moves.
@@ -251,15 +269,21 @@ export const readAndPlan = action({
     );
     if (hit) {
       const out = await gemini([{ text: STEP_PROMPT(goal, history, hit.summary, hit.buttons) }], STEP_MODELS());
-      return { ...toStep(out, hit.buttons), screenId: hit._id, cached: true };
+      return { ...toStep(out, hit.buttons), screenId: hit._id, cached: true, screen: null };
     }
     const out = await gemini(
       [{ text: READ_AND_PLAN_PROMPT(goal, history) }, { inline_data: { mime_type: 'image/jpeg', data: jpeg } }],
       VISION_MODELS(),
       'low',
     );
-    const buttons = toButtons(out);
+    const buttons = toButtons(out).map((b) => ({ ...b, box: uncropBox(b.box, c) }));
     const screenId = await ctx.runMutation(internal.screens.insert, { hash, summary: String(out.summary ?? 'Screen'), buttons });
-    return { ...toStep(out, buttons), screenId, cached: false };
+    let screen: number[] | null = null;
+    const sb = out.screen_2d;
+    if (Array.isArray(sb) && sb.length === 4) {
+      const [ymin, xmin, ymax, xmax] = sb.map((n: number) => clamp(n / 1000));
+      if (xmax - xmin > 0.1 && ymax - ymin > 0.1) screen = uncropBox([xmin, ymin, xmax, ymax], c);
+    }
+    return { ...toStep(out, buttons, c), screenId, cached: false, screen };
   },
 });

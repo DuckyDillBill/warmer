@@ -48,6 +48,7 @@ export class Flow {
   private changedWhilePlanning = false;
   private tapTimer: ReturnType<typeof setTimeout> | null = null;
   private reached = false; // finger got onto (or right next to) the current button at least once
+  private screenRegion: Box | null = null; // where the kiosk screen is in the camera frame (from the AI)
   private lastScreenId: string | null = null; // screen used for the current step; after a tap we skip it in the cache
   private replans = 0; // restarts caused by the screen moving mid-read; capped so camera noise can't loop forever
   private lastInstruction = '';
@@ -161,6 +162,7 @@ export class Flow {
     (this.client as { reset?: () => void } | null)?.reset?.(); // MockBackend: restart the scripted kiosk
     this.sessionId = null;
     this.lastScreenId = null;
+    this.screenRegion = null; // first read of a new order sees the whole view
     this.client
       ?.mutation(api.sessions.start, { goal })
       .then((id: string) => (this.sessionId = id))
@@ -245,19 +247,28 @@ export class Flow {
     this.set('planning', 'Reading the screen…');
     try {
       const t0 = Date.now();
-      const frame = prefetched ?? (await this.eyes.captureFrame());
+      // Once we know where the kiosk is, send only that (plus a margin) so the AI sees the buttons bigger.
+      const crop = !prefetched && this.screenRegion ? padBox(this.screenRegion, 0.12) : undefined;
+      const frame = prefetched ?? (await this.eyes.captureFrame(4000, crop));
       // One round trip: maps the screen (or uses the cache) and picks the next button together.
-      const step: Step & { cached?: boolean } = await withTimeout(
+      const step: Step & { cached?: boolean; screen?: number[] | null } = await withTimeout(
         this.client.action(api.ai.readAndPlan, {
           ...frame,
           goal: this.goal,
           history: this.history,
+          ...(crop ? { crop } : {}),
           // Right after a tap the screen must be new: don't let the cache hand back the previous screen.
           ...(this.lastScreenId && this.history.length ? { avoidScreenId: this.lastScreenId } : {}),
         }),
         20000,
         'reading the screen',
       );
+      if (step.screen && step.screen.length === 4) this.screenRegion = step.screen as Box;
+      // Cropped too tight (phone moved)? Forget the region so the retry looks at the whole view.
+      if (crop && !step.target && !step.done && !step.pin) {
+        this.screenRegion = null;
+        throw new Error('target not in the cropped view');
+      }
       console.log(`plan: ${Date.now() - t0}ms (cached screen: ${step.cached})`);
       if ((step as { screenId?: string }).screenId) this.lastScreenId = (step as { screenId?: string }).screenId!;
       this.planning = false;
@@ -370,6 +381,18 @@ function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
 
 function inBox(p: Point, b: Box): boolean {
   return p.x >= b[0] && p.x <= b[2] && p.y >= b[1] && p.y <= b[3];
+}
+
+/** Box grown by `m` (fraction of its own size) on every side, clamped to the frame. */
+function padBox(b: Box, m: number): Box {
+  const w = b[2] - b[0];
+  const h = b[3] - b[1];
+  return [
+    Math.max(0, b[0] - w * m),
+    Math.max(0, b[1] - h * m),
+    Math.min(1, b[2] + w * m),
+    Math.min(1, b[3] + h * m),
+  ];
 }
 
 /** Box expanded by `m` on every side (a little forgiveness around the button). */

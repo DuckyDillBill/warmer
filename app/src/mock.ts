@@ -138,7 +138,7 @@ export class MockEyes {
   // Same surface as Eyes (src/bridge.ts) so App and Flow don't care which one they get.
   handle = () => {};
 
-  async captureFrame(): Promise<{ jpeg: string; hash: string }> {
+  async captureFrame(_timeoutMs?: number, _crop?: Box): Promise<{ jpeg: string; hash: string }> {
     return { jpeg: '', hash: 'mock' };
   }
 

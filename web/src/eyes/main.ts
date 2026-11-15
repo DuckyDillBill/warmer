@@ -10,7 +10,7 @@ import { HoverCorrector } from './parallax';
 
 type Box = [number, number, number, number];
 type InMsg =
-  | { type: 'captureFrame'; id: string }
+  | { type: 'captureFrame'; id: string; crop?: Box }
   | { type: 'setTarget'; box: Box | null; label?: string; private?: boolean }
   | { type: 'debug'; on: boolean }
   | { type: 'sensitivity'; value: 'normal' | 'high' };
@@ -62,7 +62,7 @@ function receive(msg: InMsg) {
     case 'captureFrame': {
       tracker.snapshot(video);
       refiner.snapshot(video);
-      const jpeg = captureJpeg();
+      const jpeg = captureJpeg(msg.crop);
       send({ type: 'frame', id: msg.id, jpeg, hash: watcher.hash() });
       break;
     }
@@ -126,14 +126,21 @@ async function startTracking() {
 
 // ---------- capture ----------
 const captureCanvas = document.createElement('canvas');
-function captureJpeg(): string {
-  const w = video.videoWidth;
-  const h = video.videoHeight;
-  // 1024 px wide: sharper image = more accurate button boxes (we tried 768 for speed; boxes drifted).
-  const scale = Math.min(1, 1024 / w);
-  captureCanvas.width = Math.round(w * scale);
-  captureCanvas.height = Math.round(h * scale);
-  captureCanvas.getContext('2d')!.drawImage(video, 0, 0, captureCanvas.width, captureCanvas.height);
+/** JPEG of the camera frame, or of just `crop` (normalized region, e.g. the kiosk screen) at full detail. */
+function captureJpeg(crop?: Box): string {
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+  const [cx0, cy0, cx1, cy1] = crop ?? [0, 0, 1, 1];
+  const sx = Math.max(0, cx0 * vw);
+  const sy = Math.max(0, cy0 * vh);
+  const sw = Math.min(vw - sx, (cx1 - cx0) * vw);
+  const sh = Math.min(vh - sy, (cy1 - cy0) * vh);
+  // 1024 px wide max: sharper image = more accurate button boxes. Cropping to the kiosk means those
+  // pixels are spent on the buttons instead of the room around them.
+  const scale = Math.min(1, 1024 / sw);
+  captureCanvas.width = Math.round(sw * scale);
+  captureCanvas.height = Math.round(sh * scale);
+  captureCanvas.getContext('2d')!.drawImage(video, sx, sy, sw, sh, 0, 0, captureCanvas.width, captureCanvas.height);
   return captureCanvas.toDataURL('image/jpeg', 0.8).split(',')[1];
 }
 
