@@ -82,10 +82,12 @@ async function sm(path: string, body: unknown): Promise<any> {
 async function recall(userId: string | undefined, query: string): Promise<string[]> {
   try {
     const out = await sm(`/ns/${ns(userId)}/search`, { query, searchMode: 'hybrid', limit: 6 });
-    return (out.results ?? [])
+    const memories: string[] = (out.results ?? [])
       .map((r: any) => r.memory ?? r.chunk ?? r.content ?? '')
       .filter((t: unknown) => typeof t === 'string' && t.trim())
       .slice(0, 6);
+    console.log(`supermemory recalled ${memories.length} memories from ${ns(userId)}`);
+    return memories;
   } catch (e) {
     console.warn(`supermemory search failed: ${(e as Error).message}`);
     return [];
@@ -159,7 +161,8 @@ export const rememberOrder = action({
       .filter(Boolean)
       .join(' ');
     try {
-      await sm(`/ns/${ns(userId)}/document`, { content, dreaming: 'instant', metadata: { type: 'order' } });
+      const out = await sm(`/ns/${ns(userId)}/document`, { content, dreaming: 'instant', metadata: { type: 'order' } });
+      console.log(`supermemory saved order to ${ns(userId)} (${out?.status ?? 'ok'}): ${content.slice(0, 120)}`);
       return { ok: true };
     } catch (e) {
       console.warn(`supermemory add failed: ${(e as Error).message}`);
