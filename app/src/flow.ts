@@ -86,10 +86,7 @@ export class Flow {
     this.loop = new GuideLoop(() => this.onFingerOnTarget());
     this.loop.start();
     setInterval(() => this.refresh(), REFRESH_MS);
-    if (!backend && CONVEX_URL) {
-      this.live = new ConvexClient(CONVEX_URL);
-      this.live.onUpdate(api.partner.current, {}, (row: any) => this.onKioskLayout(row));
-    }
+    // Partner kiosk mode (kiosk publishes its own layout) is switched off: camera-only is the product.
   }
 
   setPartner(on: boolean) {

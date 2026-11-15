@@ -41,7 +41,6 @@ export default function App() {
   const [typed, setTyped] = useState('');
   const [pin, setPin] = useState('');
   const debug = true; // always show the target box and fingertip dot on the camera view
-  const [partner, setPartner] = useState(false);
   const [camReady, setCamReady] = useState(false);
 
   useEffect(() => {
@@ -124,7 +123,7 @@ export default function App() {
       </View>
 
       <View style={s.card} accessible accessibilityRole="text" accessibilityLiveRegion="polite">
-        <Text style={s.title}>{partner ? 'Warmer · Partner kiosk' : 'Warmer'}</Text>
+        <Text style={s.title}>Warmer</Text>
         <Text style={s.status} numberOfLines={3}>{status}</Text>
       </View>
 
@@ -143,14 +142,6 @@ export default function App() {
         <Btn label="Repeat" onPress={() => flow.repeat()} hint="Repeat the last instruction" />
         <Btn label="Retry" onPress={() => flow.retry()} hint="Read the screen again" />
         <Btn label="Reset" onPress={resetDemo} hint="Restart the demo: clears the goal and sends the kiosk back to its start screen" />
-        <Btn
-          label={partner ? 'Partner on' : 'Partner'}
-          onPress={() => {
-            flow.setPartner(!partner);
-            setPartner(!partner);
-          }}
-          hint="Partner kiosk mode: a partner kiosk tells Warmer where its buttons are and confirms each tap"
-        />
       </View>
 
       <Modal visible={typing} transparent animationType="fade" onRequestClose={() => setTyping(false)}>
