@@ -174,7 +174,7 @@ Warmer guides digit by digit with haptics and dings only.
 Invented brand (e.g. "Bun & Done"), realistic fast-food style, big picture buttons, no
 real brand names. Screens, every tap visibly changes the screen:
 Start → Categories (Burgers, Sides, Drinks) → items → item detail with "Add to order" →
-"Make it a meal?" upsell → "Round up for charity?" → Cart with total → PIN pad (4 digits) →
+"Make it a meal?" upsell → Cart with total → Pay →
 "Order #42 — Thank you!". Add a hidden reset (e.g. long-press logo) to restart the demo.
 No speech or screen reader on the kiosk: it must be a screen that doesn't talk.
 

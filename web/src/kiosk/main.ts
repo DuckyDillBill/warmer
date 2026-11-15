@@ -293,7 +293,7 @@ app.addEventListener('click', (e) => {
       return go({ name: 'categories' });
     case 'meal-no': return go({ name: 'categories' });
     case 'checkout': if (cart.length) go({ name: 'cart' }); return;
-    case 'pay': return go({ name: 'roundup' });
+    case 'pay': return void placeOrder(); // demo flow ends at Pay: no round-up, no PIN
     case 'round-yes': {
       const t = cart.reduce((sum, l) => sum + l.price, 0);
       roundedUp = Math.ceil(t) - t || 1;
