@@ -131,8 +131,9 @@ Designed for blind users. **Few words, never overlapping, never stale.**
   and checks the cart against the order before paying ("Fix it, or pay anyway?"). Supermemory
   (`SUPERMEMORY_API_KEY`, namespace `warmer_<userId>`) stores each finished order and their choices.
   All of it fails soft to Gemini-only. Never send PINs, passwords or card numbers there.
-- **Haptic rings** (`feedback.ts` RINGS): outer = light and slow, inner = strong and fast, almost
-  violent at the button. No sound effects during guidance (on iOS they can cut off speech).
+- **Haptic rings** (`feedback.ts` RINGS): outer = light and slow, close = fast hard ticking that speeds up.
+  **On the button feels different:** ticking stops, one long motor buzz + ding, "Press." The motor is
+  used only for "on", never for "close". No sound effects during guidance (on iOS they can cut off speech).
 - **Press detection** (`flow.ts`): after "Press", wait until the press really happened: the screen
   picture changes (twice in a row), or the finger reached the button then lifted for ~0.8 s.
   Kiosks act on lift, so we wait 0.5 s, then read. The AI is told the previous screen and reports

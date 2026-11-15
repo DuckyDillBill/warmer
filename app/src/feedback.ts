@@ -128,19 +128,18 @@ export function clearSpeechQueue() {
   while (queue.length) queue.shift()!.resolve();
 }
 
-// Concentric rings around the button. Bigger ring = gentle and slow; smaller = stronger and faster,
-// until it's almost violent right at the edge of the button. Each ring has one fixed rhythm, so the
-// change is easy to feel as you cross into the next ring.
-// Strength is turned way up: haptic taps alone are too weak to feel in a hand, so every ring uses
-// bursts of heavy taps, and the two innermost rings add the full vibration motor.
-type Ring = { maxDist: number; pulseMs: number; style: Haptics.ImpactFeedbackStyle; taps: number; motor: boolean };
+// Concentric rings around the button. Bigger ring = gentle and slow; smaller = stronger and faster.
+// Close = a fast, hard TICKING (like a Geiger counter) that speeds up as you get closer.
+// ON the button = something completely different: the ticking STOPS, one long motor BUZZ + ding, "Press."
+// The full vibration motor is used ONLY for "on", so close and on can never feel alike.
+type Ring = { maxDist: number; pulseMs: number; style: Haptics.ImpactFeedbackStyle; taps: number };
 const RINGS: Ring[] = [
-  { maxDist: 0.05, pulseMs: 420, style: Haptics.ImpactFeedbackStyle.Heavy, taps: 4, motor: true }, // almost violent
-  { maxDist: 0.1, pulseMs: 450, style: Haptics.ImpactFeedbackStyle.Heavy, taps: 3, motor: true },
-  { maxDist: 0.17, pulseMs: 220, style: Haptics.ImpactFeedbackStyle.Heavy, taps: 3, motor: false },
-  { maxDist: 0.26, pulseMs: 340, style: Haptics.ImpactFeedbackStyle.Heavy, taps: 2, motor: false },
-  { maxDist: 0.38, pulseMs: 500, style: Haptics.ImpactFeedbackStyle.Heavy, taps: 1, motor: false },
-  { maxDist: Infinity, pulseMs: 750, style: Haptics.ImpactFeedbackStyle.Medium, taps: 1, motor: false },
+  { maxDist: 0.05, pulseMs: 110, style: Haptics.ImpactFeedbackStyle.Heavy, taps: 1 }, // rapid-fire ticks
+  { maxDist: 0.1, pulseMs: 170, style: Haptics.ImpactFeedbackStyle.Heavy, taps: 2 },
+  { maxDist: 0.17, pulseMs: 260, style: Haptics.ImpactFeedbackStyle.Heavy, taps: 2 },
+  { maxDist: 0.26, pulseMs: 380, style: Haptics.ImpactFeedbackStyle.Heavy, taps: 2 },
+  { maxDist: 0.38, pulseMs: 550, style: Haptics.ImpactFeedbackStyle.Heavy, taps: 1 },
+  { maxDist: Infinity, pulseMs: 800, style: Haptics.ImpactFeedbackStyle.Medium, taps: 1 },
 ];
 function ringFor(distance: number): number {
   return RINGS.findIndex((r) => distance <= r.maxDist);
@@ -235,9 +234,7 @@ export class GuideLoop {
     this.onSince = 0;
 
     const ring = RINGS[ringFor(g.distance)];
-    // The motor buzz lasts ~0.4 s on iPhone, so the inner rings pulse at that rate with taps on top.
-    if (ring.motor && !isSpeaking()) Vibration.vibrate(); // the motor can interrupt speech on iOS
-    burst(ring.style, ring.taps);
+    burst(ring.style, ring.taps); // taps only: the motor buzz is saved for "on the button"
     if (this.sound && !isSpeaking()) {
       const closeness = 1 - Math.min(1, g.distance / 0.55);
       play(beeps[Math.round(closeness * (beeps.length - 1))], 0.45);
