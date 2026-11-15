@@ -46,6 +46,7 @@ export class Flow {
   private loop: GuideLoop;
   private planning = false;
   private changedWhilePlanning = false;
+  private replans = 0; // restarts caused by the screen moving mid-read; capped so camera noise can't loop forever
   private lastInstruction = '';
   private pin: string[] = [];
   private pinDigits: { label: string; box: Box }[] = [];
@@ -176,15 +177,24 @@ export class Flow {
     this.changedWhilePlanning = false;
     this.set('planning', 'Reading the screen…');
     try {
+      const t0 = Date.now();
       const frame = await this.eyes.captureFrame();
-      const map = await this.client.action(api.ai.mapScreen, frame);
-      const step: Step = await this.client.action(api.ai.nextStep, {
-        goal: this.goal,
-        history: this.history,
-        screenId: map.screenId,
-      });
+      const map = await withTimeout(this.client.action(api.ai.mapScreen, frame), 15000, 'reading the screen');
+      const t1 = Date.now();
+      const step: Step = await withTimeout(
+        this.client.action(api.ai.nextStep, { goal: this.goal, history: this.history, screenId: map.screenId }),
+        10000,
+        'choosing the next button',
+      );
+      console.log(`plan: frame+map ${t1 - t0}ms (cached: ${map.cached}), step ${Date.now() - t1}ms`);
       this.planning = false;
-      if (this.changedWhilePlanning) return this.plan(); // screen moved on while we were thinking
+      // The screen moved on while we were thinking: read it again, but at most twice in a row.
+      // Without the cap, glare or a shaky phone can keep "Reading the screen…" going for minutes.
+      if (this.changedWhilePlanning && this.replans < 2) {
+        this.replans++;
+        return this.plan();
+      }
+      this.replans = 0;
 
       if (step.done) {
         this.setTarget(null);
@@ -261,4 +271,21 @@ export class Flow {
       this.plan();
     }
   }
+}
+
+/** Never wait forever on the network: after `ms`, give up so the retry path can kick in. */
+function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`timed out ${what}`)), ms);
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        reject(e);
+      },
+    );
+  });
 }

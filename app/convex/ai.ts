@@ -10,24 +10,37 @@ declare const process: { env: Record<string, string | undefined> };
 
 type Button = { label: string; box: number[]; kind: string };
 
-const MODEL = () => process.env.GEMINI_MODEL || 'gemini-flash-latest';
+// Speed matters more than depth here: thinking is turned down to the minimum on both calls.
+// Vision (reading the screen) uses Flash; picking the next button is a tiny text task, so Flash-Lite.
+// Override either with Convex env vars GEMINI_MODEL / GEMINI_STEP_MODEL.
+const VISION_MODEL = () => process.env.GEMINI_MODEL || 'gemini-3.6-flash';
+const STEP_MODEL = () => process.env.GEMINI_STEP_MODEL || 'gemini-3.5-flash-lite';
 const HASH_MATCH_BITS = 6; // screens within this many differing bits count as "the same screen"
 
-async function gemini(parts: unknown[]): Promise<any> {
+async function gemini(parts: unknown[], model: string): Promise<any> {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error('GEMINI_API_KEY is not set in the Convex dashboard (Settings → Environment Variables).');
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${MODEL()}:generateContent`,
-    {
+  const started = Date.now();
+  const send = (minimalThinking: boolean) =>
+    fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
       body: JSON.stringify({
         contents: [{ role: 'user', parts }],
-        generationConfig: { responseMimeType: 'application/json', temperature: 0 },
+        generationConfig: {
+          responseMimeType: 'application/json',
+          temperature: 0,
+          ...(minimalThinking ? { thinkingConfig: { thinkingLevel: 'minimal' } } : {}),
+        },
       }),
-    },
-  );
+    });
+  let res = await send(true);
+  // If this model name isn't available on our key, fall back to Google's rolling Flash alias.
+  if (res.status === 404 && model !== 'gemini-flash-latest') return gemini(parts, 'gemini-flash-latest');
+  // Some models reject 'minimal'. Fall back to the model's default rather than failing the demo.
+  if (res.status === 400) res = await send(false);
   if (!res.ok) throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  console.log(`gemini ${model} took ${Date.now() - started}ms`);
   const data = await res.json();
   const text: string = data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text ?? '').join('') ?? '';
   return JSON.parse(text.replace(/^```(json)?|```$/g, '').trim());
@@ -63,7 +76,7 @@ export const mapScreen = action({
     if (hit) return { screenId: hit._id, summary: hit.summary, buttons: hit.buttons, cached: true };
 
     // 2) New screen → ask Gemini once.
-    const out = await gemini([{ text: MAP_PROMPT }, { inline_data: { mime_type: 'image/jpeg', data: jpeg } }]);
+    const out = await gemini([{ text: MAP_PROMPT }, { inline_data: { mime_type: 'image/jpeg', data: jpeg } }], VISION_MODEL());
     const buttons: Button[] = (out.buttons ?? [])
       .filter((b: any) => Array.isArray(b.box_2d) && b.box_2d.length === 4)
       .map((b: any) => {
@@ -107,7 +120,7 @@ export const nextStep = action({
   handler: async (ctx, { goal, history, screenId }): Promise<StepResult> => {
     const screen: Doc<'screens'> | null = await ctx.runQuery(internal.screens.get, { id: screenId });
     if (!screen) throw new Error('Unknown screen');
-    const out = await gemini([{ text: STEP_PROMPT(goal, history, screen.summary, screen.buttons) }]);
+    const out = await gemini([{ text: STEP_PROMPT(goal, history, screen.summary, screen.buttons) }], STEP_MODEL());
     const idx = typeof out.targetIndex === 'number' ? out.targetIndex : null;
     const b: Button | undefined = idx !== null ? screen.buttons[idx] : undefined;
     return {
@@ -128,7 +141,7 @@ export const transcribeGoal = action({
     const out = await gemini([
       { text: 'A person said what they want to do on a touchscreen (usually ordering food). Return JSON {"goal": string} with what they want, as a short phrase in their words. If nothing intelligible was said, return {"goal": ""}.' },
       { inline_data: { mime_type: mimeType ?? 'audio/mp4', data: audio } },
-    ]);
+    ], STEP_MODEL());
     return { goal: String(out.goal ?? '').trim() };
   },
 });
