@@ -8,6 +8,7 @@ export default defineConfig({
         index: resolve(__dirname, 'index.html'),
         eyes: resolve(__dirname, 'eyes.html'),
         kiosk: resolve(__dirname, 'kiosk.html'),
+        live: resolve(__dirname, 'live.html'),
       },
     },
   },

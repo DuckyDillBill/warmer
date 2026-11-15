@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bun &amp; Done · Live orders</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: #0e0b09; color: #f6efe7;
+      font-family: -apple-system, system-ui, "Segoe UI", sans-serif; overflow: hidden; }
+    body { display: flex; flex-direction: column; padding: 3vh 4vw; gap: 2.5vh; }
+    header { display: flex; align-items: baseline; justify-content: space-between; }
+    h1 { margin: 0; font-size: 6vh; font-weight: 900; letter-spacing: -0.02em; }
+    h1 span { color: #ffb81c; }
+    #status { font-size: 2.6vh; color: #8a7a6c; display: flex; align-items: center; gap: 1vh; }
+    #status::before { content: ''; width: 1.6vh; height: 1.6vh; border-radius: 50%; background: #8a7a6c; }
+    #status.live::before { background: #2ecc71; box-shadow: 0 0 1.5vh #2ecc71; }
+    #orders { flex: 1; display: flex; flex-direction: column; gap: 1.4vh; min-height: 0; }
+    .order { display: grid; grid-template-columns: 22vh 1fr auto; align-items: center; gap: 3vw;
+      padding: 1.6vh 2.5vw; border-radius: 2vh; background: #1d1713; min-height: 0; flex: 0 0 auto; }
+    .order .num { font-size: 6vh; font-weight: 900; color: #ffb81c; font-variant-numeric: tabular-nums; }
+    .order .items { font-size: 3.4vh; font-weight: 600; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .order .total { font-size: 4.4vh; font-weight: 800; font-variant-numeric: tabular-nums; }
+    .order:first-child { background: #2a1f17; }
+    .order.new { animation: arrive 2.4s ease-out; }
+    @keyframes arrive {
+      0% { transform: translateY(-2vh) scale(1.03); background: #d6311f; box-shadow: 0 0 6vh #d6311f; }
+      30% { transform: none; background: #d6311f; }
+      100% { background: #2a1f17; box-shadow: none; }
+    }
+    .empty { margin: auto; font-size: 4vh; color: #8a7a6c; text-align: center; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Bun <span>&amp;</span> Done · Live orders</h1>
+    <div id="status">Connecting…</div>
+  </header>
+  <div id="orders"></div>
+  <script type="module" src="/src/live/main.ts"></script>
+</body>
+</html>

@@ -1,4 +1,6 @@
-export {};
+import { ConvexClient } from 'convex/browser';
+import { anyApi } from 'convex/server';
+
 // "Bun & Done" — a fake fast-food self-order kiosk for the Warmer demo (iPad, portrait).
 // Deliberately a screen that doesn't talk: no speech, no screen-reader hints.
 type Item = { id: string; name: string; emoji: string; price: number; desc: string; meal?: boolean };
@@ -55,6 +57,11 @@ let screen: KScreen = { name: 'start' };
 let cart: Line[] = [];
 let roundedUp = 0;
 let doneTimer: number | undefined;
+let orderNumber = 42;
+let placing = false;
+
+const convexUrl = import.meta.env.VITE_CONVEX_URL;
+const convex = convexUrl ? new ConvexClient(convexUrl) : null;
 
 const app = document.getElementById('app')!;
 const money = (n: number) => '$' + n.toFixed(2);
@@ -186,13 +193,31 @@ function render() {
       html = `<div class="done">
         <div class="emoji" style="font-size:120px">✅</div>
         <div class="msg">Thank you!</div>
-        <div class="num">Order #42</div>
+        <div class="num">Order #${orderNumber}</div>
         <div class="msg">Please wait for your number.</div>
       </div>`;
       doneTimer = window.setTimeout(() => restart(), 30000);
       break;
   }
   app.innerHTML = html;
+}
+
+async function placeOrder() {
+  if (placing) return;
+  placing = true;
+  orderNumber = 42;
+  try {
+    if (convex) {
+      const order = convex.mutation(anyApi.orders.place, { items: cart, total: Math.round(total() * 100) / 100 });
+      const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000));
+      orderNumber = await Promise.race([order, timeout]);
+    }
+  } catch (err) {
+    console.error('orders:place failed, using #42', err);
+  } finally {
+    placing = false;
+  }
+  go({ name: 'done' });
 }
 
 function restart() {
@@ -241,7 +266,7 @@ app.addEventListener('click', (e) => {
     }
     case 'round-no': return go({ name: 'pin', digits: 0 });
     case 'pin-cancel': return go({ name: 'cart' });
-    case 'pin-ok': if (s.name === 'pin' && s.digits === 4) go({ name: 'done' }); return;
+    case 'pin-ok': if (s.name === 'pin' && s.digits === 4) void placeOrder(); return;
   }
 });
 
