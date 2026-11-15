@@ -79,10 +79,16 @@ function next() {
     u.resolve();
     next();
   };
-  Speech.speak(u.text, { rate: u.rate, onDone: done, onStopped: done, onError: done });
   // Watchdog: iOS sometimes never reports that speech finished (e.g. right after recording audio).
   // Without this, the queue waits forever and Warmer goes silent. Move on after a generous estimate.
+  // Set BEFORE speaking, so even if speak() throws, the queue keeps moving.
   watchdog = setTimeout(done, 1500 + u.text.length * 90);
+  try {
+    Speech.speak(u.text, { rate: u.rate, onDone: done, onStopped: done, onError: done });
+  } catch (e) {
+    console.warn('speech failed', e);
+    done();
+  }
 }
 
 /** Speak and resolve when finished. Queued behind anything already being said. */

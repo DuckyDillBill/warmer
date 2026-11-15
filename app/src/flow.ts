@@ -48,7 +48,9 @@ export class Flow {
   private planning = false;
   private changedWhilePlanning = false;
   private tapTimer: ReturnType<typeof setTimeout> | null = null;
-  private reached = false; // finger got onto (or right next to) the current button at least once
+  private reached = false;
+  private pressWatch: ReturnType<typeof setInterval> | null = null;
+  private frameHash = ''; // camera hash of the screen we're guiding on (hand excluded) // finger got onto (or right next to) the current button at least once
   private screenRegion: Box | null = null; // where the kiosk screen is in the camera frame (from the AI)
   private lastScreenId: string | null = null; // screen used for the current step; after a tap we skip it in the cache
   private replans = 0; // restarts caused by the screen moving mid-read; capped so camera noise can't loop forever
@@ -147,6 +149,8 @@ export class Flow {
   private clearTapTimer() {
     if (this.tapTimer) clearTimeout(this.tapTimer);
     this.tapTimer = null;
+    if (this.pressWatch) clearInterval(this.pressWatch);
+    this.pressWatch = null;
   }
 
   onScreenChanged() {
@@ -245,7 +249,46 @@ export class Flow {
   }
 
   private onFingerOnTarget() {
-    if (this.state === 'guiding') say('Press.');
+    if (this.state !== 'guiding') return;
+    say('Press.');
+    this.watchAfterPress();
+  }
+
+  /**
+   * After "Press", Warmer is silent until it knows the tap happened. Three ways to know, so it can
+   * never get stuck in silence:
+   *  1. the finger leaves the button (watchForTap),
+   *  2. the finger rests on the button for ~1.5 s (people tap and keep their finger there),
+   *  3. the camera picture of the screen clearly changed (checked every ~1.5 s).
+   * And if none of that happens for 8 s, it reminds them out loud.
+   */
+  private watchAfterPress() {
+    if (this.pressWatch) clearInterval(this.pressWatch);
+    let restingTicks = 0;
+    let tick = 0;
+    let remindedAt = Date.now();
+    this.pressWatch = setInterval(() => {
+      const box = this.target?.box;
+      if (this.state !== 'guiding' || this.planning || !box) return this.clearTapTimer();
+      tick++;
+      const onButton = !!this.finger && inBox(this.finger, grow(box, 0.03));
+      restingTicks = onButton ? restingTicks + 1 : 0;
+      if (restingTicks >= 2) return this.onScreenChanged();
+      if (tick % 2 === 0 && this.frameHash) {
+        this.eyes
+          .captureFrame(2000)
+          .then((f) => {
+            if (this.pressWatch && this.state === 'guiding' && !this.planning && hamming(f.hash, this.frameHash) >= 10) {
+              this.onScreenChanged();
+            }
+          })
+          .catch(() => {});
+      }
+      if (Date.now() - remindedAt > 8000 && !isSpeaking()) {
+        remindedAt = Date.now();
+        say('Press the button, then lift your finger.');
+      }
+    }, 750);
   }
 
   private async plan(attempt = 0, internal = false, prefetched?: { jpeg: string; hash: string }): Promise<void> {
@@ -269,6 +312,7 @@ export class Flow {
       // Once we know where the kiosk is, send only that (plus a margin) so the AI sees the buttons bigger.
       const crop = !prefetched && this.screenRegion ? padBox(this.screenRegion, 0.12) : undefined;
       const frame = prefetched ?? (await this.eyes.captureFrame(4000, crop));
+      this.frameHash = frame.hash;
       // One round trip: maps the screen (or uses the cache) and picks the next button together.
       const step: Step & { cached?: boolean; screen?: number[] | null } = await withTimeout(
         this.client.action(api.ai.readAndPlan, {
@@ -398,6 +442,20 @@ function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
       },
     );
   });
+}
+
+/** Differing bits between two hex hashes (0 if they can't be compared). */
+function hamming(a: string, b: string): number {
+  if (!a || !b || a.length !== b.length) return 0;
+  let d = 0;
+  for (let i = 0; i < a.length; i++) {
+    let x = parseInt(a[i], 16) ^ parseInt(b[i], 16);
+    while (x) {
+      d += x & 1;
+      x >>= 1;
+    }
+  }
+  return d;
 }
 
 function inBox(p: Point, b: Box): boolean {
