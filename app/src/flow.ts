@@ -411,13 +411,15 @@ export class Flow {
   /**
    * Every ~2 s while guiding: quietly read the screen again.
    * - Same page, same button: snap the box to where the button really is now (silent).
-   * - Page changed (the AI says so AND the camera picture changed a lot): the press happened, carry on.
-   * Never speaks on its own, and skips while the finger is at the button (the hand hides it).
+   * - Page changed (the AI says so AND the camera picture changed): carry on to the next step, even if
+   *   we never saw the press. Keeps running after the finger reached the button (that's when presses
+   *   get missed); only the box update is skipped then, because the hand hides the button.
+   * Never speaks on its own.
    */
   private async refresh() {
     if (this.partner || this.refreshing || this.planning || this.state !== 'guiding') return;
     const target = this.target;
-    if (!target || this.reached || this.loop.wasOn || !this.client || !this.screenSummary || !this.frameHash) return;
+    if (!target || !this.client || !this.screenSummary || !this.frameHash) return;
     if (Date.now() - this.guidingSince < REFRESH_MS) return; // just read it
     this.refreshing = true;
     try {
@@ -435,15 +437,16 @@ export class Flow {
         'refreshing the screen',
       );
       // Anything happen meanwhile? Then this read is stale: drop it.
-      if (this.state !== 'guiding' || this.planning || this.target !== target || this.reached || this.loop.wasOn) return;
-      const pictureChanged = hamming(frame.hash, this.frameHash) >= 8;
+      if (this.state !== 'guiding' || this.planning || this.target !== target) return;
+      const pictureChanged = hamming(frame.hash, this.frameHash) >= 5;
       if (!step.sameScreen && pictureChanged) {
         console.log('refresh: page changed without a detected press');
         this.confirmTap();
         return;
       }
       const t = step.target;
-      if (step.sameScreen && t && sameLabel(t.label, target.label)) {
+      const handAtButton = this.reached || this.loop.wasOn;
+      if (step.sameScreen && t && !handAtButton && sameLabel(t.label, target.label)) {
         const b = target.box;
         const moved = Math.hypot((t.box[0] + t.box[2]) / 2 - (b[0] + b[2]) / 2, (t.box[1] + t.box[3]) / 2 - (b[1] + b[3]) / 2);
         if (moved > 0.02) {
