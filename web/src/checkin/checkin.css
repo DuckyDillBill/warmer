@@ -1,0 +1,49 @@
+* { box-sizing: border-box; margin: 0; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+html, body { height: 100%; overflow: hidden; background: #0a1a33; }
+body { display: grid; place-items: center; height: 100dvh; font-family: -apple-system, system-ui, "Segoe UI", Roboto, sans-serif; touch-action: manipulation; }
+#device { width: min(100vw, 100dvh * 3 / 4); aspect-ratio: 3 / 4; container-type: size; position: relative; overflow: hidden; }
+#app { position: absolute; inset: 0; display: flex; flex-direction: column; }
+button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulation; }
+
+#device { background: #f4f7fb; }
+#app { color: #0b1b33; }
+header { background: #0b2a5b; color: #fff; display: flex; align-items: center; justify-content: space-between; padding: 0 4cqw; height: 9cqh; flex: 0 0 auto; }
+.logo { font-size: 5.5cqw; font-weight: 900; letter-spacing: -0.01em; }
+.logo span { color: #ffc627; }
+.step { font-size: 3.4cqw; font-weight: 700; color: #c7d6ef; }
+main { flex: 1; display: flex; flex-direction: column; padding: 4cqh 5cqw; gap: 3cqh; min-height: 0; }
+h1 { font-size: 7cqw; line-height: 1.1; }
+h2 { font-size: 4.2cqw; color: #475569; font-weight: 600; }
+.spacer { flex: 1; }
+.btn { border: 0.6cqw solid #0b2a5b; border-radius: 2.5cqw; background: #fff; font-size: 5.5cqw; font-weight: 800; height: 9cqh; width: 100%; color: #0b2a5b; }
+.btn.primary { background: #ffc627; border-color: #8a6a00; color: #111; }
+.btn.primary:disabled { background: #e2e8f0; border-color: #94a3b8; color: #94a3b8; }
+.row { display: grid; grid-template-columns: 1fr 2fr; gap: 3cqw; }
+.start { flex: 1; border: 0; background: #0b2a5b; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4cqh; }
+.start .plane { font-size: 26cqw; line-height: 1; }
+.start .brand { font-size: 11cqw; font-weight: 900; }
+.start .brand span { color: #ffc627; }
+.start .cta { font-size: 6.5cqw; font-weight: 800; background: #ffc627; color: #111; border: 0.8cqw solid #fff; border-radius: 99px; padding: 3cqh 9cqw; }
+.boxes { display: grid; grid-template-columns: repeat(6, 1fr); gap: 2cqw; }
+.box { height: 10cqh; border: 0.6cqw solid #0b2a5b; border-radius: 2cqw; background: #fff; display: grid; place-items: center; font-size: 9cqw; font-weight: 800; font-family: "SF Mono", Menlo, Consolas, monospace; }
+.box.cur { border-color: #2563eb; box-shadow: 0 0 0 0.8cqw #93c5fd; }
+.kb { display: grid; grid-template-columns: repeat(10, 1fr); gap: 1.4cqw; }
+.k { height: 7cqh; border: 0.45cqw solid #334155; border-radius: 1.6cqw; background: #fff; font-size: 5cqw; font-weight: 800; padding: 0; }
+.k.wide { grid-column: span 3; font-size: 4cqw; background: #e2e8f0; }
+.card { background: #fff; border: 0.5cqw solid #cbd5e1; border-radius: 3cqw; padding: 3cqh 5cqw; display: flex; flex-direction: column; gap: 1.6cqh; }
+.card .name { font-size: 7cqw; font-weight: 900; }
+.route { display: flex; align-items: center; justify-content: space-between; font-size: 12cqw; font-weight: 900; color: #0b2a5b; }
+.route small { display: block; font-size: 3.4cqw; color: #475569; font-weight: 600; }
+.route .arrow { font-size: 7cqw; color: #94a3b8; }
+.facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2cqw; font-size: 3.4cqw; color: #475569; font-weight: 600; }
+.facts b { display: block; font-size: 5.5cqw; color: #0b1b33; }
+.seats { display: grid; grid-template-columns: 1fr 1fr; gap: 4cqw; height: 40cqh; flex: 0 0 auto; }
+.seat { border: 0.8cqw solid #0b2a5b; border-radius: 3cqw; background: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2cqh; }
+.seat .ico { font-size: 12cqw; line-height: 1; }
+.seat .t { font-size: 7cqw; font-weight: 900; }
+.seat .s { font-size: 4.5cqw; color: #475569; font-weight: 700; }
+.center { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3cqh; text-align: center; }
+.printer { width: 60cqw; height: 4cqh; background: #334155; border-radius: 1cqw; position: relative; }
+.paper { width: 50cqw; margin: 0 auto; height: 0; background: #fff; border: 0.4cqw solid #cbd5e1; animation: print 1.8s ease-out forwards; }
+@keyframes print { to { height: 22cqh; } }
+.ok { width: 30cqw; height: 30cqw; border-radius: 50%; background: #16a34a; border: 1cqw solid #86efac; color: #fff; display: grid; place-items: center; font-size: 18cqw; font-weight: 900; }
