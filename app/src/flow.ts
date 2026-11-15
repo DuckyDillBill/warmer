@@ -6,7 +6,7 @@ import { CONVEX_URL } from './config';
 import type { Eyes } from './bridge';
 import { GuideLoop, say } from './feedback';
 import type { Box, Point } from './guidance';
-import { smooth } from './guidance';
+import { inOnZone, smooth } from './guidance';
 
 const api = anyApi as any;
 
@@ -46,6 +46,8 @@ export class Flow {
   private loop: GuideLoop;
   private planning = false;
   private changedWhilePlanning = false;
+  private tapTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastScreenId: string | null = null; // screen used for the current step; after a tap we skip it in the cache
   private replans = 0; // restarts caused by the screen moving mid-read; capped so camera noise can't loop forever
   private lastInstruction = '';
   private pin: string[] = [];
@@ -85,9 +87,34 @@ export class Flow {
   onFingertip(p: Point | null) {
     this.finger = p ? smooth(this.finger, p) : null;
     this.loop.set(this.finger, this.target?.box ?? null);
+    this.watchForTap();
+  }
+
+  /**
+   * Tap detection that doesn't depend on the camera noticing the screen change:
+   * once the finger has reached the button ("Tap."), the hand leaving the button for ~0.9 s
+   * counts as the tap. If the screen didn't really change, the next read just finds the same button.
+   */
+  private watchForTap() {
+    const box = this.target?.box;
+    const armed = (this.state === 'guiding' || this.state === 'pin') && !!box && this.loop.wasOn && !this.planning;
+    if (!armed) return this.clearTapTimer();
+    const away = !this.finger || !inOnZone(this.finger, grow(box!, 0.04));
+    if (!away) return this.clearTapTimer();
+    if (this.tapTimer) return;
+    this.tapTimer = setTimeout(() => {
+      this.tapTimer = null;
+      if (this.loop.wasOn && !this.planning) this.onScreenChanged();
+    }, 900);
+  }
+
+  private clearTapTimer() {
+    if (this.tapTimer) clearTimeout(this.tapTimer);
+    this.tapTimer = null;
   }
 
   onScreenChanged() {
+    this.clearTapTimer();
     if (this.state === 'pin') return this.onPinDigitEntered();
     if (this.planning) {
       this.changedWhilePlanning = true;
@@ -116,6 +143,7 @@ export class Flow {
     this.needPin = false;
     (this.client as { reset?: () => void } | null)?.reset?.(); // MockBackend: restart the scripted kiosk
     this.sessionId = null;
+    this.lastScreenId = null;
     this.client
       ?.mutation(api.sessions.start, { goal })
       .then((id: string) => (this.sessionId = id))
@@ -199,11 +227,18 @@ export class Flow {
       const frame = prefetched ?? (await this.eyes.captureFrame());
       // One round trip: maps the screen (or uses the cache) and picks the next button together.
       const step: Step & { cached?: boolean } = await withTimeout(
-        this.client.action(api.ai.readAndPlan, { ...frame, goal: this.goal, history: this.history }),
+        this.client.action(api.ai.readAndPlan, {
+          ...frame,
+          goal: this.goal,
+          history: this.history,
+          // Right after a tap the screen must be new: don't let the cache hand back the previous screen.
+          ...(this.lastScreenId && this.history.length ? { avoidScreenId: this.lastScreenId } : {}),
+        }),
         20000,
         'reading the screen',
       );
       console.log(`plan: ${Date.now() - t0}ms (cached screen: ${step.cached})`);
+      if ((step as { screenId?: string }).screenId) this.lastScreenId = (step as { screenId?: string }).screenId!;
       this.planning = false;
       // The screen moved on while we were thinking: read it again, but at most twice in a row.
       // Without the cap, glare or a shaky phone can keep "Reading the screen…" going for minutes.
@@ -306,4 +341,9 @@ function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
       },
     );
   });
+}
+
+/** Box expanded by `m` on every side (a little forgiveness around the button). */
+function grow(b: Box, m: number): Box {
+  return [b[0] - m, b[1] - m, b[2] + m, b[3] + m];
 }

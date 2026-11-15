@@ -17,6 +17,8 @@ type Button = { label: string; box: number[]; kind: string };
 const VISION_MODELS = () => [process.env.GEMINI_MODEL || 'gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-3.5-flash-lite'];
 const STEP_MODELS = () => [process.env.GEMINI_STEP_MODEL || 'gemini-3.5-flash-lite', 'gemini-2.5-flash-lite', 'gemini-3.6-flash'];
 const PER_MODEL_TIMEOUT_MS = 12000;
+const HASH_MATCH_BITS = 6; // mapScreen: screens within this many differing bits count as "the same screen"
+const READ_MATCH_BITS = 2; // readAndPlan: stricter (kiosk screens share a layout, so 8x8 hashes look alike)
 
 async function callModel(parts: unknown[], model: string, key: string): Promise<any> {
   const started = Date.now();
@@ -212,10 +214,20 @@ function toStep(out: any, buttons: Button[]): StepResult {
 }
 
 export const readAndPlan = action({
-  args: { jpeg: v.string(), hash: v.string(), goal: v.string(), history: v.array(v.string()) },
-  handler: async (ctx, { jpeg, hash, goal, history }): Promise<StepResult & { screenId: Id<'screens'>; cached: boolean }> => {
+  args: {
+    jpeg: v.string(),
+    hash: v.string(),
+    goal: v.string(),
+    history: v.array(v.string()),
+    avoidScreenId: v.optional(v.id('screens')), // the screen we were just on: never reuse it right after a tap
+  },
+  handler: async (ctx, { jpeg, hash, goal, history, avoidScreenId }): Promise<StepResult & { screenId: Id<'screens'>; cached: boolean }> => {
     const recent: Doc<'screens'>[] = await ctx.runQuery(internal.screens.recent, {});
-    const hit = recent.find((s: Doc<'screens'>) => hamming(s.hash, hash) <= HASH_MATCH_BITS);
+    // Kiosk screens share a layout, so their coarse hashes can be close. Match strictly, and skip the
+    // screen we just left, otherwise the old buttons come back and the target box never moves.
+    const hit = recent.find(
+      (s: Doc<'screens'>) => s._id !== avoidScreenId && hamming(s.hash, hash) <= READ_MATCH_BITS,
+    );
     if (hit) {
       const out = await gemini([{ text: STEP_PROMPT(goal, history, hit.summary, hit.buttons) }], STEP_MODELS());
       return { ...toStep(out, hit.buttons), screenId: hit._id, cached: true };
