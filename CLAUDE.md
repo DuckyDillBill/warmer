@@ -128,11 +128,13 @@ Designed for blind users. **Quiet by design:** in testing, overlapping sounds ma
   "almost" when right at the button.
 - **On the button** (center 60% for 150 ms): ding + big buzz + **"Press and hold"**, then **silence until the next screen**.
 - **Every instruction says where the button is:** "Next: Fries, bottom left." The first direction word follows right after.
-- **After a tap:** "Got it. Fries. Loading." While reading the screen: a soft pulse every second
+- **After a tap:** "Fries. Loading." While reading the screen: a soft pulse every second
   (haptics only); after ~6 s, "Still loading." Then the next instruction starts with "Next: …".
 - **No hand in view:** after 1.5 s, "I can't see your hand. Reach toward the screen." every ~4 s (never over other speech).
 - **Tap detection:** fingertip held steady (within 3% of the frame) on the button for 1 s, or the screen
   picture clearly changes. Passing over or wiggling away never counts. Reminder after 8 s.
+- **Finger:** MediaPipe finds the palm first; when the palm leaves the frame, `eyes/fingertip.ts`
+  keeps following the fingertip by its appearance for up to 1.5 s. Ultra-wide camera when available.
 - **Box accuracy:** Gemini gives box + exact center point; the camera page snaps the box to the button's
   real edges (`eyes/refine.ts`) and keeps it on the button as the phone moves (`eyes/tracker.ts`).
 

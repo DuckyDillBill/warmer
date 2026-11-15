@@ -177,7 +177,7 @@ export class Flow {
     if (this.state !== 'guiding') return;
     if (this.target && (this.loop.wasOn || this.reached)) {
       // Clear confirmation so a blind user knows the tap landed and a new screen is coming.
-      say(`Got it. ${this.target.label}. Loading.`);
+      say(`${this.target.label}. Loading.`);
       this.history.push(`Tapped "${this.target.label}"`);
     } else {
       this.history.push('The screen changed');

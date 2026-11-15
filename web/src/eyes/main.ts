@@ -7,6 +7,7 @@ import { Broadcaster } from './broadcast';
 import { ShiftTracker } from './tracker';
 import { BoxRefiner } from './refine';
 import { HoverCorrector } from './parallax';
+import { FingertipTracker } from './fingertip';
 
 type Box = [number, number, number, number];
 type InMsg =
@@ -37,7 +38,9 @@ const tracker = new ShiftTracker(); // keeps the box on its button when the phon
 const refiner = new BoxRefiner(); // snaps the AI's rough box to the button's real edges
 const refineOn = params.get('refine') !== '0'; // ?refine=0 turns snapping off for comparison
 const hover = new HoverCorrector(); // fixes the offset when the finger hovers off the screen
-hover.enabled = params.get('hover') !== '0'; // ?hover=0 turns the correction off for comparison
+// Off by default: when its size estimate is wrong it pushes the dot off the real fingertip. ?hover=1 to try it.
+hover.enabled = params.get('hover') === '1';
+const tipTracker = new FingertipTracker(); // follows the fingertip by appearance when the palm leaves the frame
 let handBox: Box | null = null;
 let lastMovedSent: Box | null = null;
 /** The target as it sits in the current frame (target + scene shift since Gemini saw it). */
@@ -245,6 +248,8 @@ function loop() {
     const hand = res.landmarks?.[0];
     if (hand) {
       lastHandAt = now;
+      // Remember what the fingertip looks like (every 3rd frame), so we can follow it if the palm drops out.
+      if (frames % 3 === 0) tipTracker.learn(video, { x: hand[8].x, y: hand[8].y });
       const tip = hover.correct(hand, now); // estimated touch point, not the raw hovering fingertip
       fingertip = { x: tip.x, y: tip.y };
       let minX = 1, minY = 1, maxX = 0, maxY = 0;
@@ -258,13 +263,25 @@ function loop() {
         send({ type: 'fingertip', x: tip.x, y: tip.y, t: Date.now() });
         lastSent = now;
       }
-    } else if (fingertip && now - lastHandAt < HAND_HOLD_MS) {
-      // Tracking blinked out for a moment: keep the last position instead of dropping the finger.
     } else {
-      if (fingertip) send({ type: 'nohand', t: Date.now() });
-      fingertip = null;
-      handBox = null;
-      watcher.setHand(null);
+      // No hand from MediaPipe (often: palm out of frame). Keep following the fingertip itself.
+      const t = tipTracker.track(video, now);
+      if (t) {
+        fingertip = t;
+        handBox = [t.x - 0.06, t.y - 0.06, t.x + 0.06, t.y + 0.12];
+        watcher.setHand(handBox);
+        if (now - lastSent > 30) {
+          send({ type: 'fingertip', x: t.x, y: t.y, t: Date.now() });
+          lastSent = now;
+        }
+      } else if (fingertip && now - lastHandAt < HAND_HOLD_MS) {
+        // brief blip: hold the last position
+      } else {
+        if (fingertip) send({ type: 'nohand', t: Date.now() });
+        fingertip = null;
+        handBox = null;
+        watcher.setHand(null);
+      }
     }
     // Follow the scene every other frame and tell the app when the box has moved.
     // Box tracking every 4th frame only: hand detection needs the frame rate more.
