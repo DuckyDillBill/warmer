@@ -61,18 +61,28 @@ export function isSpeaking() {
   return speaking || queue.length > 0;
 }
 
+let watchdog: ReturnType<typeof setTimeout> | null = null;
+
 function next() {
+  if (watchdog) clearTimeout(watchdog);
+  watchdog = null;
   const u = queue.shift();
   if (!u) {
     speaking = false;
     return;
   }
   speaking = true;
+  let finished = false;
   const done = () => {
+    if (finished) return;
+    finished = true;
     u.resolve();
     next();
   };
   Speech.speak(u.text, { rate: u.rate, onDone: done, onStopped: done, onError: done });
+  // Watchdog: iOS sometimes never reports that speech finished (e.g. right after recording audio).
+  // Without this, the queue waits forever and Warmer goes silent. Move on after a generous estimate.
+  watchdog = setTimeout(done, 1500 + u.text.length * 90);
 }
 
 /** Speak and resolve when finished. Queued behind anything already being said. */
@@ -108,7 +118,8 @@ function ringFor(distance: number): number {
   return RINGS.findIndex((r) => distance <= r.maxDist);
 }
 
-const STUCK_HINT_MS = 3500; // only speak a direction if they haven't gotten closer for this long
+const STUCK_HINT_MS = 2000; // speak a direction if they haven't gotten closer for this long…
+const HINT_EVERY_MS = 2500; // …but no more often than this
 
 /**
  * The guidance loop, designed for blind users (see CLAUDE.md §6). Quiet by design:
@@ -203,7 +214,7 @@ export class GuideLoop {
       this.bestDist = g.distance;
       this.bestAt = now;
     }
-    if (now - this.bestAt > STUCK_HINT_MS && now - this.lastHint > STUCK_HINT_MS && !isSpeaking()) {
+    if (now - this.bestAt > STUCK_HINT_MS && now - this.lastHint > HINT_EVERY_MS && !isSpeaking()) {
       this.lastHint = now;
       this.bestAt = now;
       say(direction(this.finger, target, g.distance), { rate: 1.15, priority: 'low' });
