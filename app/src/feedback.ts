@@ -193,7 +193,7 @@ export class GuideLoop {
       if (now - this.onSince > 150) {
         this.announcedOn = true;
         playDing(); // success buzz + ding
-        this.onOn(); // says "Press."
+        setTimeout(this.onOn, 350); // say "Press" after the ding, not on top of it
       }
       return 80;
     }
@@ -201,7 +201,7 @@ export class GuideLoop {
 
     const ring = RINGS[ringFor(g.distance)];
     // The motor buzz lasts ~0.4 s on iPhone, so the inner rings pulse at that rate with taps on top.
-    if (ring.motor) Vibration.vibrate();
+    if (ring.motor && !isSpeaking()) Vibration.vibrate(); // the motor can interrupt speech on iOS
     burst(ring.style, ring.taps);
     if (this.sound && !isSpeaking()) {
       const closeness = 1 - Math.min(1, g.distance / 0.55);

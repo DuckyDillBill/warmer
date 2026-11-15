@@ -7,9 +7,9 @@ type Box = [number, number, number, number];
 const W = 128; // working resolution (16:9)
 const H = 72;
 const HALF = 7; // patch half-size in px (patches are 15x15)
-const R = 16; // search radius in px per update, around the last known shift
-const GX = 5; // anchor grid
-const GY = 4;
+const R = 10; // search radius in px per update, around the last known shift (kept small: this runs on the phone)
+const GX = 4; // anchor grid (12 patches: light enough not to slow hand tracking)
+const GY = 3;
 const MIN_TEXTURE = 8; // skip flat patches (mean abs deviation in gray levels)
 const MAX_ERR = 14; // reject matches worse than this (mean abs difference)
 

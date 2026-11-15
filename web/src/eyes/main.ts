@@ -113,9 +113,11 @@ async function startTracking() {
     baseOptions: { modelAssetPath: MODEL, delegate },
     runningMode: 'VIDEO' as const,
     numHands: 1,
-    minHandDetectionConfidence: 0.5,
-    minHandPresenceConfidence: 0.5,
-    minTrackingConfidence: 0.5,
+    // Lower than default: a hand reaching toward a bright screen is often partly cut off or backlit,
+    // and missing the hand is worse for a blind user than a slightly noisy fingertip.
+    minHandDetectionConfidence: 0.3,
+    minHandPresenceConfidence: 0.3,
+    minTrackingConfidence: 0.3,
   });
   try {
     landmarker = await HandLandmarker.createFromOptions(fileset, opts('GPU'));
@@ -226,7 +228,8 @@ function loop() {
       watcher.setHand(null);
     }
     // Follow the scene every other frame and tell the app when the box has moved.
-    if (target && frames % 2 === 0) {
+    // Box tracking every 4th frame only: hand detection needs the frame rate more.
+    if (target && frames % 4 === 0) {
       tracker.update(video, handBox);
       const t = liveTarget()!;
       if (!lastMovedSent || Math.abs(t[0] - lastMovedSent[0]) + Math.abs(t[1] - lastMovedSent[1]) > 0.004) {
