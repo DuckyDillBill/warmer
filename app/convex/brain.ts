@@ -32,7 +32,7 @@ async function gpt(system: string, user: string): Promise<any> {
         body: JSON.stringify({
           model: OPENAI_MODEL(),
           instructions: system,
-          input: user,
+          input: `${user}\n\nReply in JSON.`, // OpenAI requires the word JSON in the input itself
           text: { format: { type: 'json_object' } },
         }),
       });
