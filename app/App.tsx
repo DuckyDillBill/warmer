@@ -40,7 +40,7 @@ export default function App() {
   const [typing, setTyping] = useState(false);
   const [typed, setTyped] = useState('');
   const [pin, setPin] = useState('');
-  const [debug, setDebug] = useState(false);
+  const debug = true; // always show the target box and fingertip dot on the camera view
   const [partner, setPartner] = useState(false);
   const [camReady, setCamReady] = useState(false);
 
@@ -150,14 +150,6 @@ export default function App() {
             setPartner(!partner);
           }}
           hint="Partner kiosk mode: a partner kiosk tells Warmer where its buttons are and confirms each tap"
-        />
-        <Btn
-          label={debug ? 'Debug on' : 'Debug'}
-          onPress={() => {
-            setDebug(!debug);
-            eyes.setDebug(!debug);
-          }}
-          hint="Show the fingertip and target on the camera view"
         />
       </View>
 

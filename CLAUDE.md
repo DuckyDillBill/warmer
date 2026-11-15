@@ -69,8 +69,7 @@ x to the right, y down.** Rear camera, not mirrored.
   `[x0, y0, x1, y1]` in 0–1 before returning. The app never sees Gemini's format.
 - Boxes are `[x0, y0, x1, y1]`.
 - The phone is on a stand, so camera coordinates stay valid until the screen changes.
-- Always keep the debug overlay (fingertip dot + target box drawn on the camera view)
-  available behind a toggle.
+- The debug overlay (fingertip dot + target box drawn on the camera view) is always on. No toggle.
 
 ## 5. Contracts
 
@@ -160,7 +159,7 @@ Warmer guides digit by digit with haptics and dings only.
 - WebView props for camera on iOS: `allowsInlineMediaPlayback`,
   `mediaPlaybackRequiresUserAction={false}`, `mediaCapturePermissionGrantType="grant"`.
 - UI: one main screen. A giant "Hold to talk" button filling most of the screen, the live
-  camera (WebView) behind or above it, a small debug toggle. Everything works with VoiceOver:
+  camera (WebView) behind or above it, with the box + fingertip overlay always on. Everything works with VoiceOver:
   real `accessibilityLabel`s, big targets, no tiny icons. Keep the screen awake while guiding.
 - Flow states: `idle → listening → planning → guiding → confirming → … → done`.
   On any failure: say "Sorry, let's try that again" and retry once.
@@ -185,7 +184,7 @@ No speech or screen reader on the kiosk: it must be a screen that doesn't talk.
   kiosk screen, it's instant for everyone"), sessions.
 - **Revyl:** natural-language tests on the iOS simulator build. Camera doesn't work in the
   simulator, so test: app opens → hold-to-talk visible → typed/mocked goal starts a session →
-  error message path → debug toggle. Add a `MOCK_CAMERA` flag that feeds a recorded kiosk
+  error message path. Add a `MOCK_CAMERA` flag that feeds a recorded kiosk
   image and fake fingertip so Revyl can exercise the guidance loop.
 
 ## 10. Milestones
