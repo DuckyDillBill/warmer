@@ -53,7 +53,7 @@ function burst(style: Haptics.ImpactFeedbackStyle, n: number) {
 // ---------- speech: a queue, so a sentence is never cut off ----------
 // Blind users rely on every word. Normal messages wait their turn and play in order.
 // 'low' messages (hints like "left") are simply skipped if anything else is being said or queued.
-type Utterance = { text: string; rate: number; resolve: () => void };
+type Utterance = { text: string; rate: number; resolve: () => void; low?: boolean; retried?: boolean };
 const queue: Utterance[] = [];
 let speaking = false;
 
@@ -73,18 +73,33 @@ function next() {
   }
   speaking = true;
   let finished = false;
+  const started = Date.now();
   const done = () => {
     if (finished) return;
     finished = true;
     u.resolve();
     next();
   };
+  // iOS can cut speech off mid-sentence (e.g. someone presses the volume buttons, or another sound
+  // grabs the audio). We never stop speech ourselves, so a "stopped" or a finish far too early means
+  // the sentence was cut. Say it again once, unless a newer instruction is already waiting.
+  const cut = () => {
+    if (finished) return;
+    if (!u.low && !u.retried && queue.length === 0) {
+      finished = true;
+      queue.unshift({ ...u, retried: true });
+      setTimeout(next, 250);
+      return;
+    }
+    done();
+  };
+  const onDone = () => (Date.now() - started < u.text.length * 25 ? cut() : done());
   // Watchdog: iOS sometimes never reports that speech finished (e.g. right after recording audio).
   // Without this, the queue waits forever and Warmer goes silent. Move on after a generous estimate.
   // Set BEFORE speaking, so even if speak() throws, the queue keeps moving.
   watchdog = setTimeout(done, 1500 + u.text.length * 90);
   try {
-    Speech.speak(u.text, { rate: u.rate, onDone: done, onStopped: done, onError: done });
+    Speech.speak(u.text, { rate: u.rate, onDone, onStopped: cut, onError: cut });
   } catch (e) {
     console.warn('speech failed', e);
     done();
@@ -103,7 +118,7 @@ export function say(text: string, opts: { rate?: number; priority?: 'normal' | '
   if (opts.priority === 'low' && isSpeaking()) return Promise.resolve();
   if (opts.priority !== 'low') clearSpeechQueue();
   return new Promise((resolve) => {
-    queue.push({ text, rate: opts.rate ?? 1.0, resolve });
+    queue.push({ text, rate: opts.rate ?? 1.0, resolve, low: opts.priority === 'low' });
     if (!speaking) next();
   });
 }
