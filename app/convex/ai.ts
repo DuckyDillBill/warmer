@@ -15,7 +15,7 @@ type Button = { label: string; box: number[]; kind: string };
 // out of quota (429), slow, or unavailable, we move straight on to the next one.
 // Override the first choice with Convex env vars GEMINI_MODEL / GEMINI_STEP_MODEL.
 const VISION_MODELS = () => [process.env.GEMINI_MODEL || 'gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-3.5-flash-lite'];
-const STEP_MODELS = () => [process.env.GEMINI_STEP_MODEL || 'gemini-3.5-flash-lite', 'gemini-2.5-flash-lite', 'gemini-3.6-flash'];
+export const STEP_MODELS = () => [process.env.GEMINI_STEP_MODEL || 'gemini-3.5-flash-lite', 'gemini-2.5-flash-lite', 'gemini-3.6-flash'];
 const PER_MODEL_TIMEOUT_MS = 12000;
 const HASH_MATCH_BITS = 6; // mapScreen: screens within this many differing bits count as "the same screen"
 const READ_MATCH_BITS = 2; // readAndPlan: stricter (kiosk screens share a layout, so 8x8 hashes look alike)
@@ -61,7 +61,7 @@ async function callModel(parts: unknown[], model: string, key: string, thinking:
 
 // Reading the screen (boxes) gets a little thinking: placement accuracy matters more than a second.
 // Picking the next button from a text list stays at minimal thinking.
-async function gemini(parts: unknown[], models: string[], thinking: 'minimal' | 'low' = 'minimal'): Promise<any> {
+export async function gemini(parts: unknown[], models: string[], thinking: 'minimal' | 'low' = 'minimal'): Promise<any> {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error('GEMINI_API_KEY is not set in the Convex dashboard (Settings → Environment Variables).');
   const errors: string[] = [];
@@ -138,7 +138,7 @@ const STEP_RULES = `Rules:
 - If this screen is a PIN pad and the PIN has not been entered yet (history doesn't say "PIN entered"), set "pin": true and "targetIndex": null. If the PIN was entered, pick OK/Enter.
 - If the screen offers a meal upgrade, upsell, add-on, donation, round-up, tip or subscription: if the goal or a "They answered" line in the history already decides it, pick the matching button. Otherwise set "ask" to ONE short yes/no question for them (max 12 words, include the price if shown, e.g. "Make it a meal with fries and a drink for $3?") and "targetIndex": null.
 - "They answered ..." lines in the history are the person's own choices: follow them.
-- On the cart / review-order screen, set "warning" to the items and total in one short sentence, e.g. "Cheeseburger meal, $9.48."
+- On the cart / review-order screen (before paying), set "cart" to the items and total shown, one short line, e.g. "Cheeseburger meal, Sprite, $9.48." Otherwise "cart": null.
 - If the goal is complete (order confirmation / thank-you / done screen), set "done": true, "targetIndex": null and "doneSay" to a short sentence including any order number shown.
 - "say": what to tell them before guiding, max 8 words, e.g. "Burgers. Find it." Never read prices unless useful.`;
 
@@ -154,10 +154,10 @@ Rules:
 - If this screen is a PIN pad and the PIN has not been entered yet (history doesn't say "PIN entered"), set "pin": true and "targetIndex": null. If the PIN was entered, pick OK/Enter.
 - If the screen offers a meal upgrade, upsell, add-on, donation, round-up, tip or subscription: if the goal or a "They answered" line in the history already decides it, pick the matching button. Otherwise set "ask" to ONE short yes/no question for them (max 12 words, include the price if shown, e.g. "Make it a meal with fries and a drink for $3?") and "targetIndex": null.
 - "They answered ..." lines in the history are the person's own choices: follow them.
-- On the cart / review-order screen, set "warning" to the items and total in one short sentence, e.g. "Cheeseburger meal, $9.48."
+- On the cart / review-order screen (before paying), set "cart" to the items and total shown, one short line, e.g. "Cheeseburger meal, Sprite, $9.48." Otherwise "cart": null.
 - If the goal is complete (order confirmation / thank-you / done screen), set "done": true, "targetIndex": null and "doneSay" to a short sentence including any order number shown.
 - "say": what to tell them before guiding, max 8 words, e.g. "Burgers. Find it." Never read prices unless useful.
-Return JSON: {"targetIndex": number|null, "say": string, "warning": string|null, "ask": string|null, "pin": boolean, "done": boolean, "doneSay": string|null}`;
+Return JSON: {"targetIndex": number|null, "say": string, "warning": string|null, "ask": string|null, "cart": string|null, "pin": boolean, "done": boolean, "doneSay": string|null}`;
 
 type Target = { label: string; box: number[] };
 type StepResult = {
@@ -165,6 +165,7 @@ type StepResult = {
   say: string;
   warning: string | null;
   ask: string | null;
+  cart: string | null;
   pin: boolean;
   done: boolean;
   doneSay: string | null;
@@ -184,6 +185,7 @@ export const nextStep = action({
       say: String(out.say ?? ''),
       warning: out.warning ? String(out.warning) : null,
       ask: out.ask ? String(out.ask) : null,
+      cart: out.cart ? String(out.cart) : null,
       pin: !!out.pin,
       done: !!out.done,
       doneSay: out.doneSay ? String(out.doneSay) : null,
@@ -221,7 +223,7 @@ and "screen_2d": [ymin, xmin, ymax, xmax] (0–1000, whole photo) around the tou
 2) Pick the ONE button (by its index in your list) to tap next that moves them toward their goal,
 and give "targetPoint": [y, x] (0–1000, whole photo) at the exact visual center of that button.
 ${STEP_RULES}
-Return JSON: {"summary": string, "buttons": [{"label": string, "kind": string, "box_2d": [number, number, number, number]}], "targetIndex": number|null, "sameScreen": boolean, "targetPoint": [number, number]|null, "screen_2d": [number, number, number, number]|null, "say": string, "warning": string|null, "ask": string|null, "pin": boolean, "done": boolean, "doneSay": string|null}`;
+Return JSON: {"summary": string, "buttons": [{"label": string, "kind": string, "box_2d": [number, number, number, number]}], "targetIndex": number|null, "sameScreen": boolean, "targetPoint": [number, number]|null, "screen_2d": [number, number, number, number]|null, "say": string, "warning": string|null, "ask": string|null, "cart": string|null, "pin": boolean, "done": boolean, "doneSay": string|null}`;
 
 function toStep(out: any, buttons: Button[], crop?: Crop): StepResult {
   const idx = typeof out.targetIndex === 'number' ? out.targetIndex : null;
@@ -246,6 +248,7 @@ function toStep(out: any, buttons: Button[], crop?: Crop): StepResult {
     say: String(out.say ?? ''),
     warning: out.warning ? String(out.warning) : null,
     ask: out.ask ? String(out.ask) : null,
+    cart: out.cart ? String(out.cart) : null,
     pin: !!out.pin,
     done: !!out.done,
     doneSay: out.doneSay ? String(out.doneSay) : null,

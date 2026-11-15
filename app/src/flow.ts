@@ -2,7 +2,7 @@
 // goal → read screen → guide finger → tap detected → say what was tapped → read next screen → … → done
 import { ConvexClient, ConvexHttpClient } from 'convex/browser';
 import { anyApi } from 'convex/server';
-import { CONVEX_URL } from './config';
+import { CONVEX_URL, USER_ID } from './config';
 import type { Eyes } from './bridge';
 import { clearSpeechQueue, GuideLoop, isSpeaking, say } from './feedback';
 import * as Haptics from 'expo-haptics';
@@ -18,6 +18,7 @@ type Step = {
   say: string;
   warning: string | null;
   ask?: string | null;
+  cart?: string | null;
   pin: boolean;
   done: boolean;
   doneSay: string | null;
@@ -61,7 +62,10 @@ export class Flow {
   private lastScreenId: string | null = null; // screen used for the current step; after a tap we skip it in the cache
   private replans = 0; // restarts caused by the screen moving mid-read; capped so camera noise can't loop forever
   private lastInstruction = '';
-  private pendingAsk = ''; // yes/no question we asked (meal upgrade, donation…), waiting for their answer
+  private pendingAsk = '';
+  private askIsCart = false; // the open question is "fix the cart, or pay?"
+  private cartChecked = false; // GPT already compared the cart to the order
+  private said = ''; // what they actually said, before GPT turned it into a checklist // yes/no question we asked (meal upgrade, donation…), waiting for their answer
   private pin: string[] = [];
   private pinDigits: { label: string; box: Box }[] = [];
   private listener: FlowListener = () => {};
@@ -138,6 +142,7 @@ export class Flow {
       say: '',
       warning: pick.warning,
       ask: pick.ask ?? null,
+      cart: pick.cart ?? null,
       pin: pick.pin,
       done: pick.done,
       doneSay: pick.doneSay,
@@ -292,9 +297,12 @@ export class Flow {
       say("Sorry, I didn't catch that. Hold the button and try again.");
       return;
     }
+    this.said = goal;
     this.goal = goal;
     this.history = [];
     this.pendingAsk = '';
+    this.askIsCart = false;
+    this.cartChecked = false;
     this.pin = [];
     this.needPin = false;
     (this.client as { reset?: () => void } | null)?.reset?.(); // MockBackend: restart the scripted kiosk
@@ -308,14 +316,25 @@ export class Flow {
       .then((id: string) => (this.sessionId = id))
       .catch((e: Error) => console.warn('session start failed', e));
     this.set('planning', `Goal: ${goal}`);
-    say(`Okay. ${goal}.`); // speak while we read the screen, don't wait for it
+    // GPT + Supermemory turn what they said into a clear order ("the usual" works). If that's slow or
+    // down, we just use their own words.
+    const order = this.client
+      ? await withTimeout(this.client.action(api.brain.planOrder, { said: goal, userId: USER_ID }), 9000, 'planning the order').catch(
+          (e: Error) => (console.warn('planOrder failed', e), null),
+        )
+      : null;
+    if (order?.goal) this.goal = order.goal;
+    this.set('planning', `Order: ${this.goal}`);
+    say(`Okay. ${order?.say || goal}.`); // speak while we read the screen, don't wait for it
     this.plan();
   }
 
   /** Voice goal: audio recorded on the phone → Gemini transcription (via Convex) → start. */
   async startFromAudio(base64: string, mimeType = 'audio/mp4') {
     if (!this.client) return this.start('');
-    this.set('planning', 'Listening…');
+    // Answering our question? Stay in 'asking' so start() routes the words to answer().
+    if (this.state === 'asking' && this.pendingAsk) this.set('asking', 'Listening…');
+    else this.set('planning', 'Listening…');
     try {
       const { goal } = await this.client.action(api.ai.transcribeGoal, { audio: base64, mimeType });
       await this.start(goal);
@@ -325,14 +344,31 @@ export class Flow {
     }
   }
 
-  /** Their spoken (or typed) answer to a yes/no question like "Make it a meal?". */
-  private answer(text: string) {
+  /** Their spoken (or typed) answer to our question ("Make it a meal?", "Fix it, or pay?"). GPT reads it. */
+  private async answer(text: string) {
+    const question = this.pendingAsk;
+    const retryWords = this.askIsCart ? 'Say fix it, or pay.' : 'Say yes or no.';
     if (!text) {
-      say('Sorry. Hold the button and say yes or no.');
+      say(`Sorry. ${retryWords}`);
       return;
     }
-    this.history.push(`They answered "${text}" to "${this.pendingAsk}"`);
+    let choice = text;
+    if (this.client) {
+      const r = await withTimeout(this.client.action(api.brain.interpretAnswer, { question, heard: text }), 6000, 'reading the answer').catch(
+        () => null,
+      );
+      if (r && !r.answer) {
+        say(`Sorry. ${question} ${retryWords}`);
+        return;
+      }
+      if (r?.answer) choice = r.answer;
+    }
+    if (this.state !== 'asking' || this.pendingAsk !== question) return; // something else happened meanwhile
+    this.history.push(`They answered "${choice}" to "${question}"`);
+    // Want the cart fixed? Check it again next time we reach the cart.
+    if (this.askIsCart && !/pay/i.test(choice)) this.cartChecked = false;
     this.pendingAsk = '';
+    this.askIsCart = false;
     say('Okay.');
     this.plan();
   }
@@ -346,6 +382,7 @@ export class Flow {
     this.setTarget(null);
     this.goal = '';
     this.pendingAsk = '';
+    this.askIsCart = false;
     this.set('idle', 'Hold the button and say what you want.');
   }
 
@@ -477,6 +514,10 @@ export class Flow {
         const msg = step.doneSay || 'Done.';
         this.set('done', msg);
         this.logSession('done');
+        // Supermemory: remember what they ordered and the choices they made, for "the usual" next time.
+        this.client
+          ?.action(api.brain.rememberOrder, { userId: USER_ID, said: this.said, goal: this.goal, history: this.history, place: this.screenSummary || undefined })
+          .catch((e: Error) => console.warn('rememberOrder failed', e));
         this.lastInstruction = msg;
         await say(msg);
         return;
@@ -493,6 +534,27 @@ export class Flow {
         }
         return;
       }
+      // Cart: GPT compares it to what they asked for, before they pay. A blind person can't see the cart.
+      let cartLine = '';
+      if (step.cart && step.target && !missed) {
+        cartLine = step.cart;
+        if (!this.cartChecked && this.client) {
+          this.cartChecked = true;
+          const check = await withTimeout(this.client.action(api.brain.checkCart, { goal: this.goal, cart: step.cart }), 8000, 'checking the cart').catch(
+            () => null,
+          );
+          if (check && !check.ok) {
+            this.setTarget(null);
+            this.pendingAsk = `${check.say || "Your cart doesn't match your order."} Fix it, or pay anyway?`;
+            this.askIsCart = true;
+            const words = `${this.pendingAsk} Hold the button and answer.`;
+            this.lastInstruction = words;
+            this.set('asking', this.pendingAsk);
+            await say(words);
+            return;
+          }
+        }
+      }
       if (step.ask && !step.target) {
         // Meal upgrade, donation, tip…: their choice, not ours. Ask, then wait for them to hold and answer.
         this.setTarget(null);
@@ -508,7 +570,7 @@ export class Flow {
       // Short and always the same shape: "Next: Fries, bottom left." / "Press again. Fries, bottom left."
       const where = locate(step.target.box as Box, this.screenRegion);
       const lead = missed ? "That didn't press. " : this.history.length ? 'Next: ' : '';
-      const words = lead + [missed ? null : step.warning, `${step.target.label}, ${where}.`].filter(Boolean).join(' ');
+      const words = lead + [missed ? null : step.warning, cartLine || null, `${step.target.label}, ${where}.`].filter(Boolean).join(' ');
       this.lastInstruction = words;
       this.setTarget({ label: step.target.label, box: step.target.box as Box });
       this.set('guiding', words || `Find ${step.target.label}`);
