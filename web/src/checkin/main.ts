@@ -2,9 +2,8 @@ export {};
 // "Skylark Air" - a fake airport self check-in kiosk (portrait). A screen that doesn't talk.
 type Screen = 'start' | 'code' | 'found' | 'seat' | 'review' | 'printing' | 'done';
 
-const KEYS = ['1234567890', 'QWERTYUIOP', 'ASDFGHJKL', 'ZXCVBNM'];
 let screen: Screen = 'start';
-let code = '';
+const code = 'K7Q2XM';
 let seat: { type: 'Window' | 'Aisle'; id: string } | null = null;
 let timer: number | undefined;
 const app = document.getElementById('app')!;
@@ -27,22 +26,17 @@ function render() {
       break;
     case 'code':
       html = `${head('Step 1 of 4')}<main>
-        <h1>Enter your confirmation code</h1><h2>6 letters or numbers, found on your booking email</h2>
-        <div class="boxes">${[0, 1, 2, 3, 4, 5].map((i) => `<div class="box ${i === code.length ? 'cur' : ''}">${code[i] ?? ''}</div>`).join('')}</div>
-        <div class="spacer"></div>
-        <div class="kb">
-          ${KEYS.map((row) => row.split('').map((k) => `<button class="k" data-key="${k}">${k}</button>`).join('') + (row.length < 10 && row !== KEYS[3] ? '<div></div>' : '')).join('')}
-          <button class="k wide" data-act="del">⌫ Delete</button>
-        </div>
-        <div class="row"><button class="btn" data-act="cancel">Cancel</button><button class="btn primary" data-act="find" ${code.length === 6 ? '' : 'disabled'}>Continue</button></div>
+        <h1>Find your booking</h1><h2>Place your passport on the scanner, then touch below</h2>
+        <button class="big primary" data-act="find"><div class="ico">🛂</div>Scan passport</button>
+        <button class="btn" data-act="cancel">Cancel</button>
       </main>`;
       break;
     case 'found':
       html = `${head('Step 2 of 4')}<main>
         <h1>Passenger found</h1><h2>Confirmation ${code}</h2>
         <div class="card"><div class="name">MAYA CHEN</div>${flight()}</div>
-        <div class="spacer"></div>
-        <div class="row"><button class="btn" data-act="back-code">Not me</button><button class="btn primary" data-act="to-seat">Continue</button></div>
+        <button class="big primary" data-act="to-seat">Continue</button>
+        <button class="btn" data-act="back-code">Not me</button>
       </main>`;
       break;
     case 'seat':
@@ -52,8 +46,7 @@ function render() {
           <button class="seat" data-seat="Window"><div class="ico">🪟</div><div class="t">Window</div><div class="s">Seat 14A</div></button>
           <button class="seat" data-seat="Aisle"><div class="ico">🚶</div><div class="t">Aisle</div><div class="s">Seat 14C</div></button>
         </div>
-        <div class="spacer"></div>
-        <div class="row"><button class="btn" data-act="back-found">Back</button><div></div></div>
+
       </main>`;
       break;
     case 'review':
@@ -61,8 +54,7 @@ function render() {
         <h1>You're checked in</h1><h2>${seat!.type} seat ${seat!.id} · Boarding 7:10 AM</h2>
         <div class="card"><div class="name">MAYA CHEN · ${seat!.id}</div>${flight()}</div>
         <div class="spacer"></div>
-        <button class="btn primary" data-act="print">Print boarding pass</button>
-        <button class="btn" data-act="to-seat">Change seat</button>
+        <button class="big primary" data-act="print">🎫 Print pass</button>
       </main>`;
       break;
     case 'printing':
@@ -82,29 +74,23 @@ function render() {
 }
 
 function reset() {
-  code = '';
   seat = null;
   go('start');
 }
 
 app.addEventListener('click', (e) => {
-  const el = (e.target as HTMLElement).closest('[data-act],[data-key],[data-seat]') as HTMLElement | null;
+  const el = (e.target as HTMLElement).closest('[data-act],[data-seat]') as HTMLElement | null;
   if (!el) return;
-  if (el.dataset.key && screen === 'code') {
-    if (code.length < 6) code += el.dataset.key;
-    return render();
-  }
   if (el.dataset.seat) {
     seat = el.dataset.seat === 'Window' ? { type: 'Window', id: '14A' } : { type: 'Aisle', id: '14C' };
     return go('review');
   }
   switch (el.dataset.act) {
     case 'begin': return go('code');
-    case 'del': code = code.slice(0, -1); return render();
     case 'cancel':
     case 'restart': return reset();
-    case 'find': if (code.length === 6) go('found'); return;
-    case 'back-code': code = ''; return go('code');
+    case 'find': return go('found');
+    case 'back-code': return go('code');
     case 'to-seat': return go('seat');
     case 'back-found': return go('found');
     case 'print': return go('printing');

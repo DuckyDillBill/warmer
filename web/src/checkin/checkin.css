@@ -24,12 +24,6 @@ h2 { font-size: 4.2cqw; color: #475569; font-weight: 600; }
 .start .brand { font-size: 11cqw; font-weight: 900; }
 .start .brand span { color: #ffc627; }
 .start .cta { font-size: 6.5cqw; font-weight: 800; background: #ffc627; color: #111; border: 0.8cqw solid #fff; border-radius: 99px; padding: 3cqh 9cqw; }
-.boxes { display: grid; grid-template-columns: repeat(6, 1fr); gap: 2cqw; }
-.box { height: 10cqh; border: 0.6cqw solid #0b2a5b; border-radius: 2cqw; background: #fff; display: grid; place-items: center; font-size: 9cqw; font-weight: 800; font-family: "SF Mono", Menlo, Consolas, monospace; }
-.box.cur { border-color: #2563eb; box-shadow: 0 0 0 0.8cqw #93c5fd; }
-.kb { display: grid; grid-template-columns: repeat(10, 1fr); gap: 1.4cqw; }
-.k { height: 7cqh; border: 0.45cqw solid #334155; border-radius: 1.6cqw; background: #fff; font-size: 5cqw; font-weight: 800; padding: 0; }
-.k.wide { grid-column: span 3; font-size: 4cqw; background: #e2e8f0; }
 .card { background: #fff; border: 0.5cqw solid #cbd5e1; border-radius: 3cqw; padding: 3cqh 5cqw; display: flex; flex-direction: column; gap: 1.6cqh; }
 .card .name { font-size: 7cqw; font-weight: 900; }
 .route { display: flex; align-items: center; justify-content: space-between; font-size: 12cqw; font-weight: 900; color: #0b2a5b; }
@@ -37,7 +31,7 @@ h2 { font-size: 4.2cqw; color: #475569; font-weight: 600; }
 .route .arrow { font-size: 7cqw; color: #94a3b8; }
 .facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2cqw; font-size: 3.4cqw; color: #475569; font-weight: 600; }
 .facts b { display: block; font-size: 5.5cqw; color: #0b1b33; }
-.seats { display: grid; grid-template-columns: 1fr 1fr; gap: 4cqw; height: 40cqh; flex: 0 0 auto; }
+.seats { display: grid; grid-template-columns: 1fr; gap: 4cqh; flex: 1; }
 .seat { border: 0.8cqw solid #0b2a5b; border-radius: 3cqw; background: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2cqh; }
 .seat .ico { font-size: 12cqw; line-height: 1; }
 .seat .t { font-size: 7cqw; font-weight: 900; }
@@ -47,3 +41,9 @@ h2 { font-size: 4.2cqw; color: #475569; font-weight: 600; }
 .paper { width: 50cqw; margin: 0 auto; height: 0; background: #fff; border: 0.4cqw solid #cbd5e1; animation: print 1.8s ease-out forwards; }
 @keyframes print { to { height: 22cqh; } }
 .ok { width: 30cqw; height: 30cqw; border-radius: 50%; background: #16a34a; border: 1cqw solid #86efac; color: #fff; display: grid; place-items: center; font-size: 18cqw; font-weight: 900; }
+.big { flex: 1; min-height: 20cqh; border: 0.8cqw solid #8a6a00; border-radius: 4cqw; background: #ffc627; color: #111; font-size: 9cqw; font-weight: 900; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2cqh; }
+.big .ico { font-size: 18cqw; line-height: 1; }
+.seat { flex-direction: row; gap: 5cqw; }
+.seat .t { font-size: 10cqw; }
+.btn { flex: 0 0 auto; }
+.big { min-height: 0; }

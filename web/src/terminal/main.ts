@@ -23,9 +23,8 @@ function render() {
         <div class="row"><button class="btn red" data-act="cancel">Cancel</button><button class="btn green" data-act="pay">Pay</button></div>`;
       break;
     case 'present':
-      body = `<div class="screen"><div class="title">Tap, insert<br>or swipe</div><div class="sub">${TOTAL}</div>
+      body = `<div class="screen"><div class="title">Tap your card</div><div class="sub">${TOTAL}</div>
         <button class="tapzone" data-act="card"><div class="waves">)))</div>Tap card here</button></div>
-        <div class="row"><button class="btn" data-act="card">Insert chip</button><button class="btn" data-act="card">Swipe</button></div>
         <button class="btn red" data-act="cancel">Cancel</button>`;
       break;
     case 'pin':

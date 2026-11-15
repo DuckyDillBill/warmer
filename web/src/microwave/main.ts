@@ -32,11 +32,8 @@ function render() {
       </div>
     </div>
     <div class="right">
-      ${btn('Popcorn', 'Popcorn')}${btn('Defrost', 'Defrost')}${btn('Reheat', 'Reheat')}${btn('Power', 'Power')}
-      ${[1, 2, 3].map((d) => `<button class="b num" data-num="${d}">${d}</button>`).join('')}${btn('add30', '+30 sec', 'tall')}
-      ${[4, 5, 6].map((d) => `<button class="b num" data-num="${d}">${d}</button>`).join('')}
-      ${[7, 8, 9, 0].map((d) => `<button class="b num" data-num="${d}">${d}</button>`).join('')}
-      ${btn('stop', 'Stop / Clear', 'stop')}${btn('start', 'Start', 'start')}
+      ${btn('Popcorn', '🍿 Popcorn')}${btn('Reheat', '♨️ Reheat')}${btn('Defrost', '❄️ Defrost')}
+      ${btn('add30', '+30 sec')}${btn('stop', 'Stop', 'stop')}${btn('start', 'Start', 'start')}
     </div>`;
 }
 

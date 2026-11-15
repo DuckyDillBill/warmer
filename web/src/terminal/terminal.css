@@ -15,18 +15,18 @@ button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulat
 .amount { font-size: 15cqw; font-weight: 800; font-variant-numeric: tabular-nums; }
 .title { font-size: 8cqw; font-weight: 800; line-height: 1.15; }
 .sub { font-size: 4.6cqw; color: #9aa3ad; }
-.btn { border: 0.8cqw solid #e5e7eb; border-radius: 3cqw; background: #1f2329; font-size: 6cqw; font-weight: 800; padding: 0; height: 10cqh; width: 100%; }
+.btn { border: 0.8cqw solid #e5e7eb; border-radius: 3cqw; background: #1f2329; font-size: 7cqw; font-weight: 800; padding: 0; height: 12cqh; width: 100%; }
 .btn.green { background: #16a34a; border-color: #86efac; color: #fff; }
 .btn.red { background: #dc2626; border-color: #fca5a5; color: #fff; }
 .btn.yellow { background: #facc15; border-color: #fef08a; color: #111; }
 .row { display: grid; grid-template-columns: 1fr 1fr; gap: 3cqw; width: 100%; }
-.tapzone { width: 70cqw; height: 70cqw; border-radius: 50%; border: 1cqw solid #60a5fa; background: #0f2440; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2cqh; font-size: 6cqw; font-weight: 800; color: #dbeafe; }
+.tapzone { width: 86cqw; height: 86cqw; border-radius: 50%; border: 1cqw solid #60a5fa; background: #0f2440; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2cqh; font-size: 6cqw; font-weight: 800; color: #dbeafe; }
 .tapzone .waves { font-size: 18cqw; line-height: 1; }
 .dots { display: flex; gap: 5cqw; justify-content: center; }
 .dot { width: 8cqw; height: 8cqw; border-radius: 50%; border: 0.8cqw solid #e5e7eb; }
 .dot.on { background: #e5e7eb; }
 .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2.6cqw; width: 100%; }
-.key { height: 9cqh; border: 0.7cqw solid #6b7280; border-radius: 3cqw; background: #262b32; font-size: 9cqw; font-weight: 800; }
+.key { height: 10.5cqh; border: 0.7cqw solid #6b7280; border-radius: 3cqw; background: #262b32; font-size: 9cqw; font-weight: 800; }
 .key.fn { font-size: 5cqw; }
 .check { width: 40cqw; height: 40cqw; border-radius: 50%; background: #16a34a; border: 1.2cqw solid #86efac; display: grid; place-items: center; font-size: 24cqw; font-weight: 900; color: #fff; }
 .screen.approved .title { color: #4ade80; font-size: 11cqw; }

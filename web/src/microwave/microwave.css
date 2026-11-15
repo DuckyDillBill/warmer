@@ -16,10 +16,10 @@ button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulat
 .display.running .time { color: #a7f3d0; }
 .display.done .time { animation: blink 0.6s steps(2) infinite; }
 @keyframes blink { 50% { opacity: 0.2; } }
-.right { flex: 1; display: grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(5, 1fr); gap: 2cqh; }
-.b { border: 0.5cqh solid #9ca3af; border-radius: 2cqh; background: #24272b; font-size: 5.2cqh; font-weight: 800; color: #f9fafb; }
+.right { flex: 1; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(2, 1fr); gap: 3cqh; }
+.b { border: 0.5cqh solid #9ca3af; border-radius: 2cqh; background: #24272b; font-size: 7cqh; font-weight: 800; color: #f9fafb; }
 .b.num { font-size: 8cqh; background: #2d3136; }
 .b.tall { grid-row: span 2; font-size: 6cqh; }
 .b.on { background: #0e7490; border-color: #67e8f9; }
-.b.start { background: #16a34a; border-color: #86efac; grid-column: span 2; font-size: 7cqh; }
-.b.stop { background: #dc2626; border-color: #fca5a5; grid-column: span 2; font-size: 6cqh; }
+.b.start { background: #16a34a; border-color: #86efac; font-size: 9cqh; }
+.b.stop { background: #dc2626; border-color: #fca5a5; font-size: 9cqh; }
