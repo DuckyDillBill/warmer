@@ -18,14 +18,17 @@ import { Eyes } from './src/bridge';
 import { EYES_URL } from './src/config';
 import { initAudio, say } from './src/feedback';
 import { Flow, type FlowState } from './src/flow';
+import { MOCK_CAMERA, MockBackend, MockEyes } from './src/mock';
 
 const C = { bg: '#14110f', card: '#221c18', text: '#f6efe7', muted: '#b5a596', warm: '#ff9a3c', red: '#e5533d' };
 
 export default function App() {
   useKeepAwake();
   const web = useRef<RNWebView>(null);
-  const eyes = useMemo(() => new Eyes(web), []);
-  const flow = useMemo(() => new Flow(eyes), [eyes]);
+  // MOCK_CAMERA (simulator / Revyl): fake camera + scripted backend. Otherwise the real camera WebView + Convex.
+  const mockBackend = useMemo(() => (MOCK_CAMERA ? new MockBackend() : null), []);
+  const eyes = useMemo(() => (mockBackend ? (new MockEyes(mockBackend) as unknown as Eyes) : new Eyes(web)), [mockBackend]);
+  const flow = useMemo(() => new Flow(eyes, mockBackend ?? undefined), [eyes, mockBackend]);
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
 
   const [state, setState] = useState<FlowState>('idle');
@@ -91,6 +94,9 @@ export default function App() {
     <View style={s.root}>
       <StatusBar style="light" />
       <View style={s.cam} accessible={false} importantForAccessibility="no-hide-descendants">
+        {MOCK_CAMERA ? (
+          <MockCamera eyes={eyes as unknown as MockEyes} debug={debug} />
+        ) : (
         <WebView
           ref={web}
           source={{ uri: EYES_URL }}
@@ -102,6 +108,7 @@ export default function App() {
           originWhitelist={['*']}
           style={{ flex: 1, backgroundColor: '#000' }}
         />
+        )}
         {!camReady && <Text style={s.camHint}>Starting camera…</Text>}
       </View>
 
@@ -177,6 +184,55 @@ export default function App() {
           </View>
         </View>
       </Modal>
+    </View>
+  );
+}
+
+// Stand-in camera view for MOCK_CAMERA mode: shows the fake fingertip and the target box.
+function MockCamera({ eyes, debug }: { eyes: MockEyes; debug: boolean }) {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => tick((n) => n + 1), 50);
+    return () => clearInterval(t);
+  }, []);
+  const b = eyes.target;
+  const f = eyes.finger;
+  return (
+    <View style={{ flex: 1, backgroundColor: '#2a2420' }} accessible accessibilityLabel="Mock camera">
+      <Text style={s.camHint}>Mock camera (Bun & Done kiosk)</Text>
+      {debug && b && (
+        <View
+          accessible
+          accessibilityLabel="Target box"
+          style={{
+            position: 'absolute',
+            left: `${b[0] * 100}%`,
+            top: `${b[1] * 100}%`,
+            width: `${(b[2] - b[0]) * 100}%`,
+            height: `${(b[3] - b[1]) * 100}%`,
+            borderWidth: 3,
+            borderColor: C.warm,
+            borderRadius: 8,
+          }}
+        />
+      )}
+      {debug && f && (
+        <View
+          accessible
+          accessibilityLabel="Fingertip"
+          style={{
+            position: 'absolute',
+            left: `${f.x * 100}%`,
+            top: `${f.y * 100}%`,
+            width: 18,
+            height: 18,
+            marginLeft: -9,
+            marginTop: -9,
+            borderRadius: 9,
+            backgroundColor: C.red,
+          }}
+        />
+      )}
     </View>
   );
 }

@@ -18,7 +18,8 @@
       },
       "env": {
         "EXPO_PUBLIC_EYES_URL": "https://warmer-lake.vercel.app/eyes",
-        "EXPO_PUBLIC_CONVEX_URL": "https://rugged-gerbil-90.convex.cloud"
+        "EXPO_PUBLIC_CONVEX_URL": "https://rugged-gerbil-90.convex.cloud",
+        "EXPO_PUBLIC_MOCK_CAMERA": "1"
       }
     },
     "production": {

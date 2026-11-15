@@ -22,6 +22,14 @@ type Step = {
   digits: { label: string; box: Box }[];
 };
 
+// Anything that can answer Convex calls: the real ConvexHttpClient, or MockBackend in MOCK_CAMERA mode.
+export type Backend = {
+  action(fn: any, args: any): Promise<any>;
+  mutation(fn: any, args: any): Promise<any>;
+};
+// The parts of Eyes (src/bridge.ts) the flow needs. MockEyes (src/mock.ts) provides the same.
+type EyesLike = Pick<Eyes, 'captureFrame' | 'setTarget' | 'setSensitivity'>;
+
 export type FlowListener = (s: { state: FlowState; status: string; goal: string; needPin: boolean }) => void;
 
 export class Flow {
@@ -30,7 +38,8 @@ export class Flow {
   goal = '';
   needPin = false;
 
-  private client = CONVEX_URL ? new ConvexHttpClient(CONVEX_URL) : null;
+  private client: Backend | null;
+  private sessionId: string | null = null;
   private history: string[] = [];
   private target: Target | null = null;
   private finger: Point | null = null;
@@ -42,7 +51,8 @@ export class Flow {
   private pinDigits: { label: string; box: Box }[] = [];
   private listener: FlowListener = () => {};
 
-  constructor(private eyes: Eyes) {
+  constructor(private eyes: EyesLike, backend?: Backend) {
+    this.client = backend ?? (CONVEX_URL ? new ConvexHttpClient(CONVEX_URL) : null);
     this.loop = new GuideLoop(() => this.onFingerOnTarget());
     this.loop.start();
   }
@@ -60,6 +70,14 @@ export class Flow {
     this.state = state;
     if (status !== undefined) this.status = status;
     this.emit();
+  }
+
+  // ---------- session log (Convex `sessions`, CLAUDE.md §5). Fire and forget: never blocks guidance. ----------
+  private logSession(status: string) {
+    if (!this.client || !this.sessionId) return;
+    this.client
+      .mutation(api.sessions.update, { id: this.sessionId, history: this.history, status })
+      .catch((e: Error) => console.warn('session update failed', e));
   }
 
   // ---------- inputs ----------
@@ -95,6 +113,12 @@ export class Flow {
     this.history = [];
     this.pin = [];
     this.needPin = false;
+    (this.client as { reset?: () => void } | null)?.reset?.(); // MockBackend: restart the scripted kiosk
+    this.sessionId = null;
+    this.client
+      ?.mutation(api.sessions.start, { goal })
+      .then((id: string) => (this.sessionId = id))
+      .catch((e: Error) => console.warn('session start failed', e));
     this.set('planning', `Goal: ${goal}`);
     await say(`Got it. ${goal}.`);
     this.plan();
@@ -166,6 +190,7 @@ export class Flow {
         this.setTarget(null);
         const msg = step.doneSay || 'Done.';
         this.set('done', msg);
+        this.logSession('done');
         this.lastInstruction = msg;
         await say(msg);
         return;
@@ -187,6 +212,7 @@ export class Flow {
       this.lastInstruction = words;
       this.setTarget({ label: step.target.label, box: step.target.box as Box });
       this.set('guiding', words || `Find ${step.target.label}`);
+      this.logSession('guiding');
       await say(words);
     } catch (e) {
       this.planning = false;
@@ -196,6 +222,7 @@ export class Flow {
         return this.plan(1);
       }
       this.set('error', `Couldn't read the screen: ${(e as Error).message}`);
+      this.logSession('error');
       await say("I couldn't read the screen. Point the phone at it and press Retry.");
     }
   }
