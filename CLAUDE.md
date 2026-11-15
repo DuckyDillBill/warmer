@@ -118,25 +118,26 @@ transcribeGoal({ audio /* base64 m4a */ }) -> { goal: string }
 - Tables: `screens { hash, summary, buttons, createdAt }`, `sessions { goal, history, status, createdAt }`.
 
 ## 6. Feel: the guidance (this is the product, tune it carefully)
-Designed for blind users. **Quiet by design:** in testing, overlapping sounds made it unusable eyes-closed.
-- **Speech never gets cut off.** `say()` is a queue: every sentence finishes, in order. Hints are
-  low priority and are skipped if anything else is being said.
-- **Searching = haptic rings** (`feedback.ts` RINGS): concentric distance rings around the button.
-  Outer ring = light and slow; each smaller ring is stronger and faster, until it's almost violent
-  right at the button. No beeps: on iOS a sound effect ending can cut off speech, so haptics only.
-- **Words:** every ~2 s (when nothing else is being said) a general direction: "up left", "a little down";
-  "almost" when right at the button.
-- **On the button** (center 60% for 150 ms): ding + big buzz + **"Press and hold"**, then **silence until the next screen**.
-- **Every instruction says where the button is:** "Next: Fries, bottom left." The first direction word follows right after.
-- **After a tap:** "Fries. Loading." While reading the screen: a soft pulse every second
-  (haptics only); after ~6 s, "Still loading." Then the next instruction starts with "Next: …".
-- **No hand in view:** after 1.5 s, "I can't see your hand. Reach toward the screen." every ~4 s (never over other speech).
-- **Tap detection:** fingertip held steady (within 3% of the frame) on the button for 1 s, or the screen
-  picture clearly changes. Passing over or wiggling away never counts. Reminder after 8 s.
-- **Finger:** MediaPipe finds the palm first; when the palm leaves the frame, `eyes/fingertip.ts`
-  keeps following the fingertip by its appearance for up to 1.5 s. Ultra-wide camera when available.
-- **Box accuracy:** Gemini gives box + exact center point; the camera page snaps the box to the button's
-  real edges (`eyes/refine.ts`) and keeps it on the button as the phone moves (`eyes/tracker.ts`).
+Designed for blind users. **Few words, never overlapping, never stale.**
+- **Speech** (`feedback.ts` `say`): the current sentence always finishes; a new instruction
+  *replaces* anything still waiting; direction words are dropped if anything else is being said.
+- **Script, all short:** "Okay. Fries." → "Fries, bottom left." → direction words ("up left",
+  "a little down", "almost") every ~3 s → **"Press."** → "Loading." → "Next: Add to order, bottom right."
+  → … → "Order placed. Order number 42." If a press didn't take: "That didn't press. Fries, bottom left."
+- **Haptic rings** (`feedback.ts` RINGS): outer = light and slow, inner = strong and fast, almost
+  violent at the button. No sound effects during guidance (on iOS they can cut off speech).
+- **Press detection** (`flow.ts`): after "Press", wait until the press really happened: the screen
+  picture changes (twice in a row), or the finger reached the button then lifted for ~0.8 s.
+  Kiosks act on lift, so we wait 0.5 s, then read. The AI is told the previous screen and reports
+  `sameScreen` if the press didn't take. PIN digits: a steady 1 s hold counts.
+- **Always a fresh read** of the screen (no screen cache on the live path: cached boxes were from
+  where the phone used to be, and kiosk screens look alike).
+- **Finger:** best = a small **blue or pink sticker on the fingernail** (`eyes/marker.ts`), found every
+  frame even with the palm out of view. It auto-calibrates: when the hand is visible, the color at the
+  fingertip is checked; a strong non-skin color gets locked as the marker. Fallbacks: MediaPipe hand
+  landmarks, then following the fingertip by appearance for 1.5 s (`eyes/fingertip.ts`).
+- **Box accuracy:** Gemini gives box + exact center point; the camera page snaps the box to the
+  button's real edges (`eyes/refine.ts`) and keeps it on the button as the phone moves (`eyes/tracker.ts`).
 
 **PIN pad:** the user types the PIN into a secure field **on the phone**. It stays in memory only,
 is never spoken, never logged, never sent to the server, and is cleared when the order ends.

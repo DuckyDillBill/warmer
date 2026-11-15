@@ -201,10 +201,11 @@ export const transcribeGoal = action({
 // One round trip instead of two. Seen this screen before (cache hit)? Only a quick text call to pick
 // the button. New screen? ONE vision call that both maps the buttons and picks the next one.
 // mapScreen + nextStep above stay as-is (the contract in CLAUDE.md §5); this is an extra, faster entry point.
-const READ_AND_PLAN_PROMPT = (goal: string, history: string[]) => `This photo was taken by a phone camera pointed at a touchscreen (a restaurant kiosk, card reader, self-checkout or appliance panel).
+const READ_AND_PLAN_PROMPT = (goal: string, history: string[], previousSummary?: string) => `This photo was taken by a phone camera pointed at a touchscreen (a restaurant kiosk, card reader, self-checkout or appliance panel).
 You are guiding a blind person through it, one tap at a time.
 Their goal: "${goal}"
 What has happened so far: ${history.length ? history.map((h, i) => `${i + 1}. ${h}`).join(' ') : 'nothing yet'}
+${previousSummary ? `The screen BEFORE their last tap was: "${previousSummary}". If this photo still shows that same screen (the tap didn't take effect), set "sameScreen": true.` : ''}
 
 1) List every tappable control visible ON THE SCREEN (ignore anything outside the screen and any hand or finger).
 For each: "label" (visible text, or 1–3 words if it's only an icon/picture), "kind" ("digit" for single number keys on a keypad, otherwise "button"),
@@ -214,7 +215,7 @@ and "screen_2d": [ymin, xmin, ymax, xmax] (0–1000, whole photo) around the tou
 2) Pick the ONE button (by its index in your list) to tap next that moves them toward their goal,
 and give "targetPoint": [y, x] (0–1000, whole photo) at the exact visual center of that button.
 ${STEP_RULES}
-Return JSON: {"summary": string, "buttons": [{"label": string, "kind": string, "box_2d": [number, number, number, number]}], "targetIndex": number|null, "targetPoint": [number, number]|null, "screen_2d": [number, number, number, number]|null, "say": string, "warning": string|null, "pin": boolean, "done": boolean, "doneSay": string|null}`;
+Return JSON: {"summary": string, "buttons": [{"label": string, "kind": string, "box_2d": [number, number, number, number]}], "targetIndex": number|null, "sameScreen": boolean, "targetPoint": [number, number]|null, "screen_2d": [number, number, number, number]|null, "say": string, "warning": string|null, "pin": boolean, "done": boolean, "doneSay": string|null}`;
 
 function toStep(out: any, buttons: Button[], crop?: Crop): StepResult {
   const idx = typeof out.targetIndex === 'number' ? out.targetIndex : null;
@@ -255,24 +256,19 @@ export const readAndPlan = action({
     // If the app sent a crop of the camera frame (just the kiosk), this is where it was cut from.
     // Everything we store and return stays in full camera-frame coordinates.
     crop: v.optional(v.array(v.number())),
+    // What the previous screen was, so the AI can tell us if the tap didn't take effect yet.
+    previousSummary: v.optional(v.string()),
   },
   handler: async (
     ctx,
-    { jpeg, hash, goal, history, avoidScreenId, crop },
-  ): Promise<StepResult & { screenId: Id<'screens'>; cached: boolean; screen: number[] | null }> => {
+    { jpeg, hash, goal, history, avoidScreenId, crop, previousSummary },
+  ): Promise<StepResult & { screenId: Id<'screens'>; cached: boolean; screen: number[] | null; sameScreen: boolean; summary: string }> => {
     const c = crop && crop.length === 4 ? (crop as Crop) : undefined;
-    const recent: Doc<'screens'>[] = await ctx.runQuery(internal.screens.recent, {});
-    // Kiosk screens share a layout, so their coarse hashes can be close. Match strictly, and skip the
-    // screen we just left, otherwise the old buttons come back and the target box never moves.
-    const hit = recent.find(
-      (s: Doc<'screens'>) => s._id !== avoidScreenId && hamming(s.hash, hash) <= READ_MATCH_BITS,
-    );
-    if (hit) {
-      const out = await gemini([{ text: STEP_PROMPT(goal, history, hit.summary, hit.buttons) }], STEP_MODELS());
-      return { ...toStep(out, hit.buttons), screenId: hit._id, cached: true, screen: null };
-    }
+    // Always read the screen fresh. (Remembered screens came back with boxes from where the phone
+    // used to be, and kiosk screens look alike, so the box got stuck on the previous page.)
+    void avoidScreenId;
     const out = await gemini(
-      [{ text: READ_AND_PLAN_PROMPT(goal, history) }, { inline_data: { mime_type: 'image/jpeg', data: jpeg } }],
+      [{ text: READ_AND_PLAN_PROMPT(goal, history, previousSummary) }, { inline_data: { mime_type: 'image/jpeg', data: jpeg } }],
       VISION_MODELS(),
       'low',
     );
@@ -284,6 +280,7 @@ export const readAndPlan = action({
       const [ymin, xmin, ymax, xmax] = sb.map((n: number) => clamp(n / 1000));
       if (xmax - xmin > 0.1 && ymax - ymin > 0.1) screen = uncropBox([xmin, ymin, xmax, ymax], c);
     }
-    return { ...toStep(out, buttons, c), screenId, cached: false, screen };
+    const summary = String(out.summary ?? 'Screen');
+    return { ...toStep(out, buttons, c), screenId, cached: false, screen, sameScreen: !!out.sameScreen, summary };
   },
 });

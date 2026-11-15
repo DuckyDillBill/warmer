@@ -8,6 +8,7 @@ import { ShiftTracker } from './tracker';
 import { BoxRefiner } from './refine';
 import { HoverCorrector } from './parallax';
 import { FingertipTracker } from './fingertip';
+import { MarkerTracker } from './marker';
 
 type Box = [number, number, number, number];
 type InMsg =
@@ -41,6 +42,7 @@ const hover = new HoverCorrector(); // fixes the offset when the finger hovers o
 // Off by default: when its size estimate is wrong it pushes the dot off the real fingertip. ?hover=1 to try it.
 hover.enabled = params.get('hover') === '1';
 const tipTracker = new FingertipTracker(); // follows the fingertip by appearance when the palm leaves the frame
+const marker = new MarkerTracker(); // a blue/pink sticker on the fingernail: found every frame, palm or not
 let handBox: Box | null = null;
 let lastMovedSent: Box | null = null;
 /** The target as it sits in the current frame (target + scene shift since Gemini saw it). */
@@ -231,6 +233,15 @@ function draw() {
   }
 }
 
+function handBounds(hand: { x: number; y: number }[]): Box {
+  let minX = 1, minY = 1, maxX = 0, maxY = 0;
+  for (const p of hand) {
+    minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
+    maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y);
+  }
+  return [minX, minY, maxX, maxY];
+}
+
 // ---------- main loop ----------
 let lastVideoTime = -1;
 let lastHandAt = 0;
@@ -246,7 +257,20 @@ function loop() {
     lastVideoTime = video.currentTime;
     const res = landmarker.detectForVideo(video, now);
     const hand = res.landmarks?.[0];
-    if (hand) {
+    // Learn the fingertip marker's color whenever the hand is visible (cheap: every other frame).
+    if (hand && frames % 2 === 0) marker.calibrate(video, { x: hand[8].x, y: hand[8].y }, { x: hand[7].x, y: hand[7].y });
+    const mk = marker.locked ? marker.find(video, now) : null;
+    if (mk) {
+      // Marker found: most reliable fingertip we have. Works even when the palm is out of view.
+      lastHandAt = now;
+      fingertip = mk;
+      handBox = hand ? handBounds(hand) : [mk.x - 0.06, mk.y - 0.06, mk.x + 0.06, mk.y + 0.14];
+      watcher.setHand(handBox);
+      if (now - lastSent > 30) {
+        send({ type: 'fingertip', x: mk.x, y: mk.y, t: Date.now() });
+        lastSent = now;
+      }
+    } else if (hand) {
       lastHandAt = now;
       // Remember what the fingertip looks like (every 3rd frame), so we can follow it if the palm drops out.
       if (frames % 3 === 0) tipTracker.learn(video, { x: hand[8].x, y: hand[8].y });
@@ -303,7 +327,7 @@ function loop() {
     fps = frames;
     frames = 0;
     fpsT = now;
-    if (debug) statusEl.textContent = `${fps} fps · ${fingertip ? 'hand' : 'no hand'} · ${cameraLabel || 'camera'} · ${inApp ? 'in app' : 'browser'}`;
+    if (debug) statusEl.textContent = `${fps} fps · ${fingertip ? 'finger' : 'no finger'} · ${marker.locked ? 'marker ✓' : 'no marker'} · ${cameraLabel || 'camera'} · ${inApp ? 'in app' : 'browser'}`;
   }
   draw();
   requestAnimationFrame(loop);

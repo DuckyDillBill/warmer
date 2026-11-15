@@ -51,6 +51,9 @@ export class Flow {
   private reached = false;
   private steadyAnchor: Point | null = null;
   private steadySince = 0;
+  private leftAt = 0;
+  private pendingTapLabel = ''; // label of the button just pressed, until the next screen is confirmed // when the finger left the button after reaching it
+  private screenSummary = ''; // what the AI said the current screen is
   private pressWatch: ReturnType<typeof setInterval> | null = null;
   private frameHash = ''; // camera hash of the screen we're guiding on (hand excluded) // finger got onto (or right next to) the current button at least once
   private screenRegion: Box | null = null; // where the kiosk screen is in the camera frame (from the AI)
@@ -134,12 +137,16 @@ export class Flow {
   private watchForTap() {
     const box = this.target?.box;
     const active = (this.state === 'guiding' || this.state === 'pin') && !!box && !this.planning;
-    if (!active || !this.finger) return this.resetSteady();
-    // A tap only counts when the fingertip is held steady ON the button for a full second.
-    // Passing over the button, overshooting, or wiggling away never counts.
-    const onButton = inBox(this.finger, grow(box!, 0.03));
-    if (!onButton) return this.resetSteady();
-    this.reached = true;
+    if (!active) return this.resetSteady();
+    const onButton = !!this.finger && inBox(this.finger, grow(box!, 0.03));
+    if (onButton) {
+      this.reached = true;
+      this.leftAt = 0;
+    } else if (this.reached && !this.leftAt) {
+      this.leftAt = Date.now(); // finger lifted / moved off after reaching the button
+    }
+    // PIN digits barely change the screen, so there a steady 1 s hold on the digit counts as the press.
+    if (this.state !== 'pin' || !onButton || !this.finger) return this.resetSteady();
     const now = Date.now();
     const a = this.steadyAnchor;
     if (!a || Math.hypot(this.finger.x - a.x, this.finger.y - a.y) > STEADY_RADIUS) {
@@ -167,26 +174,37 @@ export class Flow {
     this.pressWatch = null;
   }
 
+  /** The camera noticed the screen change (or a PIN digit was held). */
   onScreenChanged() {
-    this.clearTapTimer();
-    if (this.state === 'pin') return this.onPinDigitEntered();
+    if (this.state === 'pin') {
+      this.clearTapTimer();
+      return this.onPinDigitEntered();
+    }
     if (this.planning) {
       this.changedWhilePlanning = true;
       return;
     }
-    if (this.state !== 'guiding') return;
-    if (this.target && (this.loop.wasOn || this.reached)) {
-      // Clear confirmation so a blind user knows the tap landed and a new screen is coming.
-      say(`${this.target.label}. Loading.`);
-      this.history.push(`Tapped "${this.target.label}"`);
-    } else {
-      this.history.push('The screen changed');
-    }
-    this.setTarget(null);
-    this.plan();
+    if (this.state === 'guiding' && this.reached) this.confirmTap();
   }
 
-  async start(goal: string, prefetched?: { jpeg: string; hash: string }) {
+  /**
+   * The press happened (screen changed, or finger reached the button and then lifted).
+   * Say ONE short word, give a firm buzz, then read the new screen. The kiosk changes when the
+   * finger lifts, so give it a moment before taking the picture.
+   */
+  private confirmTap() {
+    if (!this.target) return;
+    this.clearTapTimer();
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    say('Loading.');
+    this.history.push(`Tapped "${this.target.label}"`);
+    this.pendingTapLabel = this.target.label;
+    this.setTarget(null);
+    this.set('planning', 'Reading the screen…');
+    setTimeout(() => this.plan(), 500);
+  }
+
+  async start(goal: string) {
     goal = goal.trim();
     if (!goal) {
       say("Sorry, I didn't catch that. Hold the button and try again.");
@@ -200,34 +218,24 @@ export class Flow {
     this.sessionId = null;
     this.lastScreenId = null;
     this.screenRegion = null; // first read of a new order sees the whole view
+    this.screenSummary = '';
+    this.pendingTapLabel = '';
     this.client
       ?.mutation(api.sessions.start, { goal })
       .then((id: string) => (this.sessionId = id))
       .catch((e: Error) => console.warn('session start failed', e));
     this.set('planning', `Goal: ${goal}`);
-    clearSpeechQueue();
     say(`Okay. ${goal}.`); // speak while we read the screen, don't wait for it
-    this.plan(0, false, prefetched);
+    this.plan();
   }
 
   /** Voice goal: audio recorded on the phone → Gemini transcription (via Convex) → start. */
   async startFromAudio(base64: string, mimeType = 'audio/mp4') {
     if (!this.client) return this.start('');
     this.set('planning', 'Listening…');
-    // While Gemini transcribes the voice, grab a frame and map the screen at the same time.
-    // That fills the screen cache, so the first step afterwards is a quick text-only call.
-    const client = this.client!;
-    const prefetch = this.eyes
-      .captureFrame()
-      .then(async (frame) => {
-        await client.action(api.ai.mapScreen, frame);
-        return frame;
-      })
-      .catch(() => undefined);
     try {
       const { goal } = await this.client.action(api.ai.transcribeGoal, { audio: base64, mimeType });
-      const frame = goal ? await prefetch : undefined;
-      await this.start(goal, frame);
+      await this.start(goal);
     } catch (e) {
       this.set('error', `Couldn't hear that: ${(e as Error).message}`);
       say("Sorry, I couldn't hear that. Try again.");
@@ -257,6 +265,7 @@ export class Flow {
   private setTarget(t: Target | null) {
     this.target = t;
     this.reached = false;
+    this.leftAt = 0;
     this.clearTapTimer();
     this.loop.set(this.finger, t?.box ?? null);
     this.eyes.setTarget(t?.box ?? null, t?.label ?? '');
@@ -264,43 +273,43 @@ export class Flow {
 
   private onFingerOnTarget() {
     if (this.state !== 'guiding') return;
-    say('Press and hold.');
+    say('Press.');
     this.watchAfterPress();
   }
 
   /**
-   * After "Press", Warmer is silent until it knows the tap happened. Three ways to know, so it can
-   * never get stuck in silence:
-   *  1. the finger is held steady on the button for 1 s (watchForTap),
-   *  2. the camera picture of the screen clearly changed (checked every ~1.5 s).
-   * And if none of that happens for 8 s, it reminds them out loud.
+   * After "Press": quiet until the press really happened. It counts when either
+   *  - the screen picture clearly changed (checked twice in a row, so a shaky hand doesn't fool it), or
+   *  - the finger reached the button and then lifted / moved off for ~0.8 s (kiosks act on lift).
+   * One reminder after 10 s. If we guessed wrong, the next read notices it's the same screen.
    */
   private watchAfterPress() {
     if (this.pressWatch) clearInterval(this.pressWatch);
-    let tick = 0;
-    let remindedAt = Date.now();
+    let changedTicks = 0;
+    let reminded = false;
+    const started = Date.now();
     this.pressWatch = setInterval(() => {
       const box = this.target?.box;
       if (this.state !== 'guiding' || this.planning || !box) return this.clearTapTimer();
-      tick++;
-      if (tick % 2 === 0 && this.frameHash) {
+      if (this.reached && this.leftAt && Date.now() - this.leftAt > 800) return this.confirmTap();
+      if (this.frameHash) {
         this.eyes
           .captureFrame(2000)
           .then((f) => {
-            if (this.pressWatch && this.state === 'guiding' && !this.planning && hamming(f.hash, this.frameHash) >= 10) {
-              this.onScreenChanged();
-            }
+            if (!this.pressWatch) return;
+            changedTicks = hamming(f.hash, this.frameHash) >= 8 ? changedTicks + 1 : 0;
+            if (changedTicks >= 2 && this.state === 'guiding' && !this.planning) this.confirmTap();
           })
           .catch(() => {});
       }
-      if (Date.now() - remindedAt > 8000 && !isSpeaking()) {
-        remindedAt = Date.now();
-        say('Press and hold the button.');
+      if (!reminded && Date.now() - started > 10000 && !isSpeaking()) {
+        reminded = true;
+        say('Press the button.');
       }
-    }, 750);
+    }, 500);
   }
 
-  private async plan(attempt = 0, internal = false, prefetched?: { jpeg: string; hash: string }): Promise<void> {
+  private async plan(attempt = 0, internal = false): Promise<void> {
     // Only one screen read at a time. Pressing the button again or a new goal while we're reading
     // just marks the read as stale; it gets redone with the latest goal when the current one returns.
     // (Parallel reads were burning through the Gemini rate limit.)
@@ -319,16 +328,17 @@ export class Flow {
     try {
       const t0 = Date.now();
       // Once we know where the kiosk is, send only that (plus a margin) so the AI sees the buttons bigger.
-      const crop = !prefetched && this.screenRegion ? padBox(this.screenRegion, 0.12) : undefined;
-      const frame = prefetched ?? (await this.eyes.captureFrame(4000, crop));
+      const crop = this.screenRegion ? padBox(this.screenRegion, 0.12) : undefined;
+      const frame = await this.eyes.captureFrame(4000, crop);
       this.frameHash = frame.hash;
       // One round trip: maps the screen (or uses the cache) and picks the next button together.
-      const step: Step & { cached?: boolean; screen?: number[] | null } = await withTimeout(
+      const step: Step & { cached?: boolean; screen?: number[] | null; sameScreen?: boolean; summary?: string } = await withTimeout(
         this.client.action(api.ai.readAndPlan, {
           ...frame,
           goal: this.goal,
           history: this.history,
           ...(crop ? { crop } : {}),
+          ...(this.pendingTapLabel && this.screenSummary ? { previousSummary: this.screenSummary } : {}),
           // Right after a tap the screen must be new: don't let the cache hand back the previous screen.
           ...(this.lastScreenId && this.history.length ? { avoidScreenId: this.lastScreenId } : {}),
         }),
@@ -353,6 +363,13 @@ export class Flow {
       }
       this.replans = 0;
 
+      // The press didn't take effect (still the same screen): don't pretend it did.
+      const pressedLabel = this.pendingTapLabel;
+      this.pendingTapLabel = '';
+      const missed = !!pressedLabel && !!step.sameScreen;
+      if (missed && this.history[this.history.length - 1] === `Tapped "${pressedLabel}"`) this.history.pop();
+      if (step.summary) this.screenSummary = step.summary;
+
       if (step.done) {
         this.setTarget(null);
         const msg = step.doneSay || 'Done.';
@@ -375,11 +392,10 @@ export class Flow {
         return;
       }
       if (!step.target) throw new Error('no target');
-      // After the first step, start with "Next:" so it's obvious this is a new screen, not the old one.
-      const lead = this.history.length ? 'Next: ' : '';
-      // Always say WHERE the button is, right away: "Fries, bottom left."
+      // Short and always the same shape: "Next: Fries, bottom left." / "Press again. Fries, bottom left."
       const where = locate(step.target.box as Box, this.screenRegion);
-      const words = lead + [step.warning, `${step.target.label}, ${where}.`].filter(Boolean).join(' ');
+      const lead = missed ? "That didn't press. " : this.history.length ? 'Next: ' : '';
+      const words = lead + [missed ? null : step.warning, `${step.target.label}, ${where}.`].filter(Boolean).join(' ');
       this.lastInstruction = words;
       this.setTarget({ label: step.target.label, box: step.target.box as Box });
       this.set('guiding', words || `Find ${step.target.label}`);
@@ -388,10 +404,7 @@ export class Flow {
     } catch (e) {
       this.planning = false;
       console.warn('plan failed', e);
-      if (attempt === 0) {
-        await say("Sorry, let's try that again.");
-        return this.plan(1, true);
-      }
+      if (attempt === 0) return this.plan(1, true); // retry once, quietly
       this.set('error', `Couldn't read the screen: ${(e as Error).message}`);
       this.logSession('error');
       await say("I couldn't read the screen. Point the phone at it and press Retry.");

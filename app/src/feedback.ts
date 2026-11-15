@@ -91,10 +91,17 @@ function next() {
   }
 }
 
-/** Speak and resolve when finished. Queued behind anything already being said. */
+/**
+ * Speak and resolve when finished. Rules that keep it understandable:
+ * - Whatever is being said right now always finishes (never cut off).
+ * - A new normal message REPLACES anything still waiting, so you only ever hear the latest
+ *   instruction, never a backlog of stale ones.
+ * - 'low' messages (direction words) are dropped if anything is being said or waiting.
+ */
 export function say(text: string, opts: { rate?: number; priority?: 'normal' | 'low' } = {}): Promise<void> {
   if (!text) return Promise.resolve();
   if (opts.priority === 'low' && isSpeaking()) return Promise.resolve();
+  if (opts.priority !== 'low') clearSpeechQueue();
   return new Promise((resolve) => {
     queue.push({ text, rate: opts.rate ?? 1.0, resolve });
     if (!speaking) next();
@@ -124,7 +131,7 @@ function ringFor(distance: number): number {
   return RINGS.findIndex((r) => distance <= r.maxDist);
 }
 
-const HINT_EVERY_MS = 1800; // spoken direction cadence while searching (only when nothing else is being said)
+const HINT_EVERY_MS = 3000; // spoken direction cadence while searching (only when nothing else is being said)
 
 /**
  * The guidance loop, designed for blind users (see CLAUDE.md §6). Quiet by design:
@@ -191,9 +198,9 @@ export class GuideLoop {
     if (!this.finger) {
       // Never leave them guessing why the directions stopped: say it, every few seconds.
       if (!this.noHandSince) this.noHandSince = now;
-      if (now - this.noHandSince > 1500 && now - this.lastNoHandBlip > 4000 && !isSpeaking()) {
+      if (now - this.noHandSince > 2000 && now - this.lastNoHandBlip > 8000 && !isSpeaking()) {
         this.lastNoHandBlip = now;
-        say("I can't see your hand. Reach toward the screen.", { priority: 'low' });
+        say("I can't see your finger.", { priority: 'low' });
       }
       this.onSince = 0;
       return 150;
