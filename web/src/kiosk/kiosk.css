@@ -114,3 +114,8 @@ main > .btn, .row .btn { min-height: clamp(80px, 14vh, 170px); font-size: clamp(
 .bottombar .btn { flex: 1; }
 .cart { flex: 1; overflow: auto; }
 .start .cta { padding: clamp(20px, 4vh, 40px) clamp(40px, 8vw, 80px); font-size: clamp(28px, 5.5vh, 52px); }
+
+/* ---- Clear button edges (helps the camera snap the box to the real button) ---- */
+main { background: #fbe8cf; }
+.tile, .key { border: 3px solid #d8b98f; }
+.btn.ghost { border: 3px solid #c9a679; }
