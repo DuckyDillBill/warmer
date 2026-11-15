@@ -201,13 +201,20 @@ export class GuideLoop {
   }
 }
 
-/** "left" / "right" / "up" / "down", with "a little" when close. Camera frame, not mirrored. */
+/**
+ * Plain-word direction with diagonals: "up", "up left", "a little down right"…
+ * (Like a compass's 8 directions, but in words that need no translation on a screen.)
+ * Camera frame, not mirrored. A component only counts if it's at least half the bigger one.
+ */
 function direction(p: Point, b: Box, distance: number): string {
   const cx = (b[0] + b[2]) / 2;
   const cy = (b[1] + b[3]) / 2;
   const dx = cx - p.x;
   const dy = cy - p.y;
-  const horizontal = Math.abs(dx) >= Math.abs(dy);
-  const word = horizontal ? (dx > 0 ? 'right' : 'left') : dy > 0 ? 'down' : 'up';
+  const ax = Math.abs(dx);
+  const ay = Math.abs(dy);
+  const vertical = ay >= ax * 0.5 ? (dy > 0 ? 'down' : 'up') : '';
+  const horizontal = ax >= ay * 0.5 ? (dx > 0 ? 'right' : 'left') : '';
+  const word = [vertical, horizontal].filter(Boolean).join(' ');
   return distance < 0.12 ? `a little ${word}` : word;
 }
