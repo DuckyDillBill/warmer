@@ -1,0 +1,70 @@
+:root {
+  --cream: #fff6e8;
+  --ink: #2b1a10;
+  --red: #d6311f;
+  --mustard: #ffb81c;
+  --green: #1f8a4c;
+  --card: #ffffff;
+  --muted: #8a6f5c;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; }
+html, body { margin: 0; height: 100%; background: var(--cream); color: var(--ink);
+  font-family: "Arial Rounded MT Bold", "Helvetica Rounded", -apple-system, system-ui, sans-serif; }
+#app { height: 100dvh; display: flex; flex-direction: column; }
+
+header { display: flex; align-items: center; justify-content: space-between; padding: 22px 28px; background: var(--red); color: #fff; }
+.logo { font-size: 34px; font-weight: 900; letter-spacing: -0.5px; }
+.logo span { color: var(--mustard); }
+.cartpill { font-size: 22px; font-weight: 800; background: rgba(255,255,255,.18); padding: 10px 18px; border-radius: 999px; }
+
+main { flex: 1; padding: 28px; display: flex; flex-direction: column; gap: 22px; overflow: hidden; }
+h1 { margin: 0; font-size: 46px; line-height: 1.05; }
+h2 { margin: 0; font-size: 30px; color: var(--muted); font-weight: 700; }
+
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+.tile { background: var(--card); border: 0; border-radius: 26px; padding: 22px; min-height: 230px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  box-shadow: 0 6px 0 #f0d9b8; color: var(--ink); font: inherit; }
+.tile:active { transform: translateY(3px); box-shadow: 0 3px 0 #f0d9b8; }
+.tile .emoji { font-size: 96px; line-height: 1; }
+.tile .name { font-size: 32px; font-weight: 900; }
+.tile .price { font-size: 26px; color: var(--muted); font-weight: 800; }
+
+.btn { border: 0; border-radius: 22px; padding: 28px; font: inherit; font-size: 34px; font-weight: 900; color: #fff; background: var(--green); }
+.btn:active { filter: brightness(.9); }
+.btn.red { background: var(--red); }
+.btn.ghost { background: #ead7bd; color: var(--ink); }
+.btn.small { font-size: 24px; padding: 20px 26px; }
+.row { display: flex; gap: 20px; }
+.row .btn { flex: 1; }
+.spacer { flex: 1; }
+.bottombar { display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; }
+
+.start { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 30px; text-align: center; background: var(--red); color: #fff; border: 0; font: inherit; }
+.start .big { font-size: 140px; }
+.start .title { font-size: 76px; font-weight: 900; }
+.start .title span { color: var(--mustard); }
+.start .cta { font-size: 40px; font-weight: 900; background: var(--mustard); color: var(--ink); padding: 26px 48px; border-radius: 999px; }
+
+.detail { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; text-align: center; }
+.detail .emoji { font-size: 200px; }
+.detail .name { font-size: 54px; font-weight: 900; }
+.detail .desc { font-size: 26px; color: var(--muted); max-width: 520px; }
+.detail .price { font-size: 44px; font-weight: 900; color: var(--red); }
+
+.cart { background: var(--card); border-radius: 26px; padding: 24px 28px; font-size: 30px; }
+.cart .line { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 2px dashed #f0d9b8; }
+.cart .total { display: flex; justify-content: space-between; padding-top: 16px; font-size: 40px; font-weight: 900; }
+
+.dots { display: flex; justify-content: center; gap: 28px; margin: 10px 0 6px; }
+.dot { width: 64px; height: 64px; border-radius: 50%; border: 6px solid var(--ink); }
+.dot.on { background: var(--ink); }
+.keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+.key { border: 0; border-radius: 22px; background: var(--card); box-shadow: 0 6px 0 #f0d9b8; font: inherit; font-size: 56px; font-weight: 900; height: 120px; color: var(--ink); }
+.key:active { transform: translateY(3px); box-shadow: 0 3px 0 #f0d9b8; }
+.key.ok { background: var(--green); color: #fff; font-size: 38px; }
+.key.cancel { background: var(--red); color: #fff; font-size: 34px; }
+
+.done { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 18px; background: var(--green); color: #fff; }
+.done .num { font-size: 120px; font-weight: 900; }
+.done .msg { font-size: 44px; font-weight: 900; }
