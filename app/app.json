@@ -18,7 +18,13 @@
     },
     "android": {
       "package": "com.warmer.app",
-      "permissions": ["android.permission.CAMERA", "android.permission.RECORD_AUDIO"],
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#14110f",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -27,7 +33,18 @@
       }
     },
     "plugins": [
-      ["expo-audio", { "microphonePermission": "Warmer listens when you hold the button so you can say what you want." }]
-    ]
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Warmer listens when you hold the button so you can say what you want."
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "18582f2f-09be-4356-b771-688c827c90ff"
+      }
+    },
+    "owner": "warmerr"
   }
 }
