@@ -65,7 +65,9 @@ export class Flow {
   private pendingAsk = '';
   private askIsCart = false; // the open question is "fix the cart, or pay?"
   private cartChecked = false; // GPT already compared the cart to the order
-  private said = ''; // what they actually said, before GPT turned it into a checklist // yes/no question we asked (meal upgrade, donation…), waiting for their answer
+  private said = ''; // what they actually said, before GPT turned it into a checklist
+  private refreshing = false; // a quiet 2-second re-read is in flight
+  private guidingSince = 0; // when the current target was set
   private pin: string[] = [];
   private pinDigits: { label: string; box: Box }[] = [];
   private listener: FlowListener = () => {};
@@ -83,6 +85,7 @@ export class Flow {
     this.client = backend ?? (CONVEX_URL ? new ConvexHttpClient(CONVEX_URL) : null);
     this.loop = new GuideLoop(() => this.onFingerOnTarget());
     this.loop.start();
+    setInterval(() => this.refresh(), REFRESH_MS);
     if (!backend && CONVEX_URL) {
       this.live = new ConvexClient(CONVEX_URL);
       this.live.onUpdate(api.partner.current, {}, (row: any) => this.onKioskLayout(row));
@@ -397,11 +400,67 @@ export class Flow {
   // ---------- core ----------
   private setTarget(t: Target | null) {
     this.target = t;
+    this.guidingSince = Date.now();
     this.reached = false;
     this.leftAt = 0;
     this.clearTapTimer();
     this.loop.set(this.finger, t?.box ?? null);
     this.eyes.setTarget(t?.box ?? null, t?.label ?? '');
+  }
+
+  /**
+   * Every ~2 s while guiding: quietly read the screen again.
+   * - Same page, same button: snap the box to where the button really is now (silent).
+   * - Page changed (the AI says so AND the camera picture changed a lot): the press happened, carry on.
+   * Never speaks on its own, and skips while the finger is at the button (the hand hides it).
+   */
+  private async refresh() {
+    if (this.partner || this.refreshing || this.planning || this.state !== 'guiding') return;
+    const target = this.target;
+    if (!target || this.reached || this.loop.wasOn || !this.client || !this.screenSummary || !this.frameHash) return;
+    if (Date.now() - this.guidingSince < REFRESH_MS) return; // just read it
+    this.refreshing = true;
+    try {
+      const crop = this.screenRegion ? padBox(this.screenRegion, 0.12) : undefined;
+      const frame = await this.eyes.captureFrame(3000, crop);
+      const step = await withTimeout(
+        this.client.action(api.ai.readAndPlan, {
+          ...frame,
+          goal: this.goal,
+          history: this.history,
+          ...(crop ? { crop } : {}),
+          previousSummary: this.screenSummary,
+        }),
+        10000,
+        'refreshing the screen',
+      );
+      // Anything happen meanwhile? Then this read is stale: drop it.
+      if (this.state !== 'guiding' || this.planning || this.target !== target || this.reached || this.loop.wasOn) return;
+      const pictureChanged = hamming(frame.hash, this.frameHash) >= 8;
+      if (!step.sameScreen && pictureChanged) {
+        console.log('refresh: page changed without a detected press');
+        this.confirmTap();
+        return;
+      }
+      const t = step.target;
+      if (step.sameScreen && t && sameLabel(t.label, target.label)) {
+        const b = target.box;
+        const moved = Math.hypot((t.box[0] + t.box[2]) / 2 - (b[0] + b[2]) / 2, (t.box[1] + t.box[3]) / 2 - (b[1] + b[3]) / 2);
+        if (moved > 0.02) {
+          // Update in place so the guide loop keeps its timing (it compares the box by reference).
+          b[0] = t.box[0];
+          b[1] = t.box[1];
+          b[2] = t.box[2];
+          b[3] = t.box[3];
+          this.eyes.setTarget(b, target.label);
+        }
+        this.guidingSince = Date.now();
+      }
+    } catch (e) {
+      console.warn('refresh failed', e);
+    } finally {
+      this.refreshing = false;
+    }
   }
 
   private onFingerOnTarget() {
@@ -642,6 +701,7 @@ function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
 }
 
 const STEADY_MS = 1000; // finger held still on the button this long = tap
+const REFRESH_MS = 2000; // quiet re-read of the screen while guiding
 const STEADY_RADIUS = 0.03; // "still" = stays within 3% of the camera frame
 
 /** Differing bits between two hex hashes (0 if they can't be compared). */
@@ -688,4 +748,12 @@ function padBox(b: Box, m: number): Box {
 /** Box expanded by `m` on every side (a little forgiveness around the button). */
 function grow(b: Box, m: number): Box {
   return [b[0] - m, b[1] - m, b[2] + m, b[3] + m];
+}
+
+/** "Fries" vs "fries" vs "Fries $2.49": the same button. */
+function sameLabel(a: string, b: string): boolean {
+  const n = (x: string) => x.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const x = n(a);
+  const y = n(b);
+  return !!x && !!y && (x === y || x.includes(y) || y.includes(x));
 }
