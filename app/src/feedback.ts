@@ -146,7 +146,9 @@ export class GuideLoop {
   private lastHint = 0;
   private lastNoHandBlip = 0;
   private noHandSince = 0;
-  sound = true;
+  // Beeps off: on iOS a sound effect ending can cut off speech that started while it played.
+  // The haptic rings carry the distance on their own.
+  sound = false;
 
   constructor(private onOn: () => void) {}
 
@@ -204,7 +206,7 @@ export class GuideLoop {
       if (now - this.onSince > 150) {
         this.announcedOn = true;
         playDing(); // success buzz + ding
-        setTimeout(this.onOn, 350); // say "Press" after the ding, not on top of it
+        setTimeout(this.onOn, 750); // "Press and hold" only after the 0.6 s ding has fully finished
       }
       return 80;
     }

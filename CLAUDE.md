@@ -123,7 +123,7 @@ Designed for blind users. **Quiet by design:** in testing, overlapping sounds ma
   low priority and are skipped if anything else is being said.
 - **Searching = haptic rings** (`feedback.ts` RINGS): concentric distance rings around the button.
   Outer ring = light and slow; each smaller ring is stronger and faster, until it's almost violent
-  right at the button. A soft beep rides along only while nothing is being said.
+  right at the button. No beeps: on iOS a sound effect ending can cut off speech, so haptics only.
 - **Words:** every ~2 s (when nothing else is being said) a general direction: "up left", "a little down";
   "almost" when right at the button.
 - **On the button** (center 60% for 150 ms): ding + big buzz + **"Press and hold"**, then **silence until the next screen**.
