@@ -99,10 +99,12 @@ ${labels.map((l, i) => `${i}: ${l}`).join('\n')}
 Pick the ONE button to tap next that moves them toward their goal.
 Rules:
 - If this screen is a PIN pad and the PIN has not been entered yet (history doesn't say "PIN entered"), set "pin": true and "targetIndex": null. If the PIN was entered, pick OK.
-- If the screen is an upsell, add-on, donation, round-up, tip or subscription the goal didn't ask for, set "warning" to one short sentence explaining it and pick the decline button.
+- If the screen offers a meal upgrade, upsell, add-on, donation, round-up, tip or subscription: if the goal or a "They answered" line in the history already decides it, pick the matching button. Otherwise set "ask" to ONE short yes/no question for them (max 12 words, include the price if shown, e.g. "Make it a meal with fries and a drink for $3?") and "targetIndex": null.
+- "They answered ..." lines in the history are the person's own choices: follow them.
+- On the cart / review-order screen, set "warning" to the items and total in one short sentence, e.g. "Cheeseburger meal, $9.48."
 - If the goal's items are all added, go to checkout and pay.
 - If this is the order confirmation / thank-you screen, set "done": true, "targetIndex": null and "doneSay" to a short sentence including the order number.
-Return JSON: {"targetIndex": number|null, "warning": string|null, "pin": boolean, "done": boolean, "doneSay": string|null}`,
+Return JSON: {"targetIndex": number|null, "warning": string|null, "ask": string|null, "pin": boolean, "done": boolean, "doneSay": string|null}`,
         },
       ],
       MODELS(),
@@ -110,6 +112,7 @@ Return JSON: {"targetIndex": number|null, "warning": string|null, "pin": boolean
     return {
       targetIndex: typeof out.targetIndex === 'number' ? out.targetIndex : null,
       warning: out.warning ? String(out.warning) : null,
+      ask: out.ask ? String(out.ask) : null,
       pin: !!out.pin,
       done: !!out.done,
       doneSay: out.doneSay ? String(out.doneSay) : null,

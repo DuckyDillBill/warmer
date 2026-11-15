@@ -124,6 +124,9 @@ Designed for blind users. **Few words, never overlapping, never stale.**
 - **Script, all short:** "Okay. Fries." → "Fries, bottom left." → direction words ("up left",
   "a little down", "almost") every ~3 s → **"Press."** → "Loading." → "Next: Add to order, bottom right."
   → … → "Order placed. Order number 42." If a press didn't take: "That didn't press. Fries, bottom left."
+- **Choices are theirs:** on a meal upgrade / donation / tip screen Warmer asks a yes/no question
+  ("Make it a meal with fries and a drink for $3? Hold the button and say yes or no.") and waits.
+  The answer goes into the history as `They answered "yes" to "..."`. On the cart it reads items + total.
 - **Haptic rings** (`feedback.ts` RINGS): outer = light and slow, inner = strong and fast, almost
   violent at the button. No sound effects during guidance (on iOS they can cut off speech).
 - **Press detection** (`flow.ts`): after "Press", wait until the press really happened: the screen

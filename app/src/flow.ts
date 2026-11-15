@@ -11,12 +11,13 @@ import { inOnZone, smooth } from './guidance';
 
 const api = anyApi as any;
 
-export type FlowState = 'idle' | 'planning' | 'guiding' | 'pin' | 'done' | 'error';
+export type FlowState = 'idle' | 'planning' | 'guiding' | 'asking' | 'pin' | 'done' | 'error';
 type Target = { label: string; box: Box };
 type Step = {
   target: Target | null;
   say: string;
   warning: string | null;
+  ask?: string | null;
   pin: boolean;
   done: boolean;
   doneSay: string | null;
@@ -60,6 +61,7 @@ export class Flow {
   private lastScreenId: string | null = null; // screen used for the current step; after a tap we skip it in the cache
   private replans = 0; // restarts caused by the screen moving mid-read; capped so camera noise can't loop forever
   private lastInstruction = '';
+  private pendingAsk = ''; // yes/no question we asked (meal upgrade, donation…), waiting for their answer
   private pin: string[] = [];
   private pinDigits: { label: string; box: Box }[] = [];
   private listener: FlowListener = () => {};
@@ -135,6 +137,7 @@ export class Flow {
       target: b ? { label: b.label, box: map(b.rect) } : null,
       say: '',
       warning: pick.warning,
+      ask: pick.ask ?? null,
       pin: pick.pin,
       done: pick.done,
       doneSay: pick.doneSay,
@@ -284,12 +287,14 @@ export class Flow {
 
   async start(goal: string) {
     goal = goal.trim();
+    if (this.state === 'asking' && this.pendingAsk) return this.answer(goal); // they're answering our question
     if (!goal) {
       say("Sorry, I didn't catch that. Hold the button and try again.");
       return;
     }
     this.goal = goal;
     this.history = [];
+    this.pendingAsk = '';
     this.pin = [];
     this.needPin = false;
     (this.client as { reset?: () => void } | null)?.reset?.(); // MockBackend: restart the scripted kiosk
@@ -320,6 +325,18 @@ export class Flow {
     }
   }
 
+  /** Their spoken (or typed) answer to a yes/no question like "Make it a meal?". */
+  private answer(text: string) {
+    if (!text) {
+      say('Sorry. Hold the button and say yes or no.');
+      return;
+    }
+    this.history.push(`They answered "${text}" to "${this.pendingAsk}"`);
+    this.pendingAsk = '';
+    say('Okay.');
+    this.plan();
+  }
+
   repeat() {
     if (this.lastInstruction) say(this.lastInstruction);
   }
@@ -328,6 +345,7 @@ export class Flow {
     clearSpeechQueue();
     this.setTarget(null);
     this.goal = '';
+    this.pendingAsk = '';
     this.set('idle', 'Hold the button and say what you want.');
   }
 
@@ -430,7 +448,7 @@ export class Flow {
         );
         if (step.screen && step.screen.length === 4) this.screenRegion = step.screen as Box;
         // Cropped too tight (phone moved)? Forget the region so the retry looks at the whole view.
-        if (crop && !step.target && !step.done && !step.pin) {
+        if (crop && !step.target && !step.done && !step.pin && !step.ask) {
           this.screenRegion = null;
           throw new Error('target not in the cropped view');
         }
@@ -473,6 +491,17 @@ export class Flow {
           this.emit();
           await say('This is a PIN pad. Type your PIN on your phone. I will never say it out loud.');
         }
+        return;
+      }
+      if (step.ask && !step.target) {
+        // Meal upgrade, donation, tip…: their choice, not ours. Ask, then wait for them to hold and answer.
+        this.setTarget(null);
+        this.pendingAsk = step.ask;
+        const words = `${step.ask} Hold the button and say yes or no.`;
+        this.lastInstruction = words;
+        this.set('asking', step.ask);
+        this.logSession('guiding');
+        await say(words);
         return;
       }
       if (!step.target) throw new Error('no target');

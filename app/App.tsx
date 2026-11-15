@@ -99,7 +99,7 @@ export default function App() {
   }
 
   const busy = state === 'planning';
-  const big = recording ? 'Listening… let go when done' : state === 'idle' || state === 'done' || state === 'error' ? 'Hold to talk' : 'Hold to change order';
+  const big = recording ? 'Listening… let go when done' : state === 'idle' || state === 'done' || state === 'error' ? 'Hold to talk' : state === 'asking' ? 'Hold to answer' : 'Hold to change order';
 
   return (
     <View style={s.root}>

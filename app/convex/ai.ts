@@ -136,7 +136,9 @@ function uncropBox(b: number[], c?: Crop): number[] {
 
 const STEP_RULES = `Rules:
 - If this screen is a PIN pad and the PIN has not been entered yet (history doesn't say "PIN entered"), set "pin": true and "targetIndex": null. If the PIN was entered, pick OK/Enter.
-- If the screen is an upsell, add-on, donation, round-up, tip or subscription the goal didn't ask for, set "warning" to a short sentence that explains it and pick the decline button (e.g. "No thanks").
+- If the screen offers a meal upgrade, upsell, add-on, donation, round-up, tip or subscription: if the goal or a "They answered" line in the history already decides it, pick the matching button. Otherwise set "ask" to ONE short yes/no question for them (max 12 words, include the price if shown, e.g. "Make it a meal with fries and a drink for $3?") and "targetIndex": null.
+- "They answered ..." lines in the history are the person's own choices: follow them.
+- On the cart / review-order screen, set "warning" to the items and total in one short sentence, e.g. "Cheeseburger meal, $9.48."
 - If the goal is complete (order confirmation / thank-you / done screen), set "done": true, "targetIndex": null and "doneSay" to a short sentence including any order number shown.
 - "say": what to tell them before guiding, max 8 words, e.g. "Burgers. Find it." Never read prices unless useful.`;
 
@@ -150,16 +152,19 @@ ${buttons.map((b, i) => `${i}: ${b.label}`).join('\n')}
 Pick the ONE button to tap next that moves them toward their goal.
 Rules:
 - If this screen is a PIN pad and the PIN has not been entered yet (history doesn't say "PIN entered"), set "pin": true and "targetIndex": null. If the PIN was entered, pick OK/Enter.
-- If the screen is an upsell, add-on, donation, round-up, tip or subscription the goal didn't ask for, set "warning" to a short sentence that explains it and pick the decline button (e.g. "No thanks").
+- If the screen offers a meal upgrade, upsell, add-on, donation, round-up, tip or subscription: if the goal or a "They answered" line in the history already decides it, pick the matching button. Otherwise set "ask" to ONE short yes/no question for them (max 12 words, include the price if shown, e.g. "Make it a meal with fries and a drink for $3?") and "targetIndex": null.
+- "They answered ..." lines in the history are the person's own choices: follow them.
+- On the cart / review-order screen, set "warning" to the items and total in one short sentence, e.g. "Cheeseburger meal, $9.48."
 - If the goal is complete (order confirmation / thank-you / done screen), set "done": true, "targetIndex": null and "doneSay" to a short sentence including any order number shown.
 - "say": what to tell them before guiding, max 8 words, e.g. "Burgers. Find it." Never read prices unless useful.
-Return JSON: {"targetIndex": number|null, "say": string, "warning": string|null, "pin": boolean, "done": boolean, "doneSay": string|null}`;
+Return JSON: {"targetIndex": number|null, "say": string, "warning": string|null, "ask": string|null, "pin": boolean, "done": boolean, "doneSay": string|null}`;
 
 type Target = { label: string; box: number[] };
 type StepResult = {
   target: Target | null;
   say: string;
   warning: string | null;
+  ask: string | null;
   pin: boolean;
   done: boolean;
   doneSay: string | null;
@@ -178,6 +183,7 @@ export const nextStep = action({
       target: b ? { label: b.label, box: b.box } : null,
       say: String(out.say ?? ''),
       warning: out.warning ? String(out.warning) : null,
+      ask: out.ask ? String(out.ask) : null,
       pin: !!out.pin,
       done: !!out.done,
       doneSay: out.doneSay ? String(out.doneSay) : null,
@@ -215,7 +221,7 @@ and "screen_2d": [ymin, xmin, ymax, xmax] (0–1000, whole photo) around the tou
 2) Pick the ONE button (by its index in your list) to tap next that moves them toward their goal,
 and give "targetPoint": [y, x] (0–1000, whole photo) at the exact visual center of that button.
 ${STEP_RULES}
-Return JSON: {"summary": string, "buttons": [{"label": string, "kind": string, "box_2d": [number, number, number, number]}], "targetIndex": number|null, "sameScreen": boolean, "targetPoint": [number, number]|null, "screen_2d": [number, number, number, number]|null, "say": string, "warning": string|null, "pin": boolean, "done": boolean, "doneSay": string|null}`;
+Return JSON: {"summary": string, "buttons": [{"label": string, "kind": string, "box_2d": [number, number, number, number]}], "targetIndex": number|null, "sameScreen": boolean, "targetPoint": [number, number]|null, "screen_2d": [number, number, number, number]|null, "say": string, "warning": string|null, "ask": string|null, "pin": boolean, "done": boolean, "doneSay": string|null}`;
 
 function toStep(out: any, buttons: Button[], crop?: Crop): StepResult {
   const idx = typeof out.targetIndex === 'number' ? out.targetIndex : null;
@@ -239,6 +245,7 @@ function toStep(out: any, buttons: Button[], crop?: Crop): StepResult {
     target: b && box ? { label: b.label, box } : null,
     say: String(out.say ?? ''),
     warning: out.warning ? String(out.warning) : null,
+    ask: out.ask ? String(out.ask) : null,
     pin: !!out.pin,
     done: !!out.done,
     doneSay: out.doneSay ? String(out.doneSay) : null,
