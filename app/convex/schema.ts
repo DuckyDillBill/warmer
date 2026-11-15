@@ -31,6 +31,16 @@ export default defineSchema({
   // Demo control: the app's Reset button bumps resetAt; the kiosk restarts when it changes.
   demo: defineTable({ resetAt: v.number() }),
 
+  // Partner kiosk mode: a partner kiosk publishes its current screen and button layout (rects are
+  // 0–1 of the kiosk's own display). seq goes up on every change, so Warmer knows the instant a tap lands.
+  kioskLayout: defineTable({
+    screen: v.string(),
+    title: v.string(),
+    buttons: v.array(v.object({ label: v.string(), rect: v.array(v.number()), kind: v.string() })),
+    seq: v.number(),
+    updatedAt: v.number(),
+  }),
+
   liveFrame: defineTable({
     jpeg: v.string(), // small base64 camera snapshot, ~2 per second
     updatedAt: v.number(),

@@ -1,6 +1,6 @@
 // The key loop as a small state machine. See CLAUDE.md §1 and §6.
 // goal → read screen → guide finger → tap detected → say what was tapped → read next screen → … → done
-import { ConvexHttpClient } from 'convex/browser';
+import { ConvexClient, ConvexHttpClient } from 'convex/browser';
 import { anyApi } from 'convex/server';
 import { CONVEX_URL } from './config';
 import type { Eyes } from './bridge';
@@ -64,10 +64,88 @@ export class Flow {
   private pinDigits: { label: string; box: Box }[] = [];
   private listener: FlowListener = () => {};
 
+  // ---------- Partner kiosk mode (honest fallback; labeled "Partner" in the app) ----------
+  // A partner kiosk publishes its own screen + button layout to Convex (partner.ts). Warmer still finds
+  // the kiosk with the camera and guides the finger as usual; button positions come from the kiosk and
+  // the kiosk confirms each tap the instant it lands.
+  partner = false;
+  private kioskLayout: { screen: string; title: string; seq: number; buttons: { label: string; rect: number[]; kind: string }[] } | null = null;
+  private kioskSeq = 0;
+  private live: ConvexClient | null = null;
+
   constructor(private eyes: EyesLike, backend?: Backend) {
     this.client = backend ?? (CONVEX_URL ? new ConvexHttpClient(CONVEX_URL) : null);
     this.loop = new GuideLoop(() => this.onFingerOnTarget());
     this.loop.start();
+    if (!backend && CONVEX_URL) {
+      this.live = new ConvexClient(CONVEX_URL);
+      this.live.onUpdate(api.partner.current, {}, (row: any) => this.onKioskLayout(row));
+    }
+  }
+
+  setPartner(on: boolean) {
+    this.partner = on;
+    this.screenRegion = null;
+    this.emit();
+    say(on ? 'Partner kiosk mode on.' : 'Partner kiosk mode off.');
+  }
+
+  /** The partner kiosk's screen changed (it publishes after every render). */
+  private onKioskLayout(row: any) {
+    if (!row) return;
+    const changed = this.kioskSeq !== 0 && row.seq !== this.kioskSeq;
+    this.kioskLayout = row;
+    this.kioskSeq = row.seq;
+    if (!this.partner || !changed) return;
+    if (this.state === 'pin') return this.onScreenChanged(); // a PIN digit landed
+    if (this.planning) {
+      this.changedWhilePlanning = true;
+      return;
+    }
+    if (this.state === 'guiding' && this.target) this.confirmTap();
+  }
+
+  /** Partner mode: the kiosk says where its buttons are; the camera says where the kiosk is. */
+  private async partnerStep() {
+    const client = this.client!;
+    const layout = this.kioskLayout ?? (await (client as any).query?.(api.partner.current, {}));
+    if (!layout) throw new Error('no partner kiosk is publishing its layout');
+    const frame = await this.eyes.captureFrame(4000);
+    this.frameHash = frame.hash;
+    const summary = `${layout.screen}: ${layout.title}`;
+    const [found, pick] = await Promise.all([
+      client.action(api.partner.locateScreen, { jpeg: frame.jpeg }).catch(() => null),
+      client.action(api.partner.planPartner, {
+        goal: this.goal,
+        history: this.history,
+        screen: summary,
+        labels: layout.buttons.map((b: { label: string }) => b.label),
+      }),
+    ]);
+    const region = (found as Box | null) ?? this.screenRegion;
+    if (!region) throw new Error("couldn't find the kiosk screen in the camera");
+    this.screenRegion = region;
+    const map = (r: number[]): Box => {
+      const w = region[2] - region[0];
+      const h = region[3] - region[1];
+      return [region[0] + r[0] * w, region[1] + r[1] * h, region[0] + r[2] * w, region[1] + r[3] * h];
+    };
+    const b = pick.targetIndex != null ? layout.buttons[pick.targetIndex] : null;
+    return {
+      target: b ? { label: b.label, box: map(b.rect) } : null,
+      say: '',
+      warning: pick.warning,
+      pin: pick.pin,
+      done: pick.done,
+      doneSay: pick.doneSay,
+      digits: layout.buttons
+        .filter((k: { kind: string }) => k.kind === 'digit')
+        .map((k: { label: string; rect: number[] }) => ({ label: k.label, box: map(k.rect) })),
+      screen: region as number[],
+      summary,
+      sameScreen: false,
+      cached: false,
+    };
   }
 
   subscribe(l: FlowListener) {
@@ -146,7 +224,7 @@ export class Flow {
       this.leftAt = Date.now(); // finger lifted / moved off after reaching the button
     }
     // PIN digits barely change the screen, so there a steady 1 s hold on the digit counts as the press.
-    if (this.state !== 'pin' || !onButton || !this.finger) return this.resetSteady();
+    if (this.partner || this.state !== 'pin' || !onButton || !this.finger) return this.resetSteady();
     const now = Date.now();
     const a = this.steadyAnchor;
     if (!a || Math.hypot(this.finger.x - a.x, this.finger.y - a.y) > STEADY_RADIUS) {
@@ -291,8 +369,8 @@ export class Flow {
     this.pressWatch = setInterval(() => {
       const box = this.target?.box;
       if (this.state !== 'guiding' || this.planning || !box) return this.clearTapTimer();
-      if (this.reached && this.leftAt && Date.now() - this.leftAt > 800) return this.confirmTap();
-      if (this.frameHash) {
+      if (!this.partner && this.reached && this.leftAt && Date.now() - this.leftAt > 800) return this.confirmTap();
+      if (!this.partner && this.frameHash) {
         this.eyes
           .captureFrame(2000)
           .then((f) => {
@@ -327,29 +405,35 @@ export class Flow {
     this.set('planning', 'Reading the screen…');
     try {
       const t0 = Date.now();
-      // Once we know where the kiosk is, send only that (plus a margin) so the AI sees the buttons bigger.
-      const crop = this.screenRegion ? padBox(this.screenRegion, 0.12) : undefined;
-      const frame = await this.eyes.captureFrame(4000, crop);
-      this.frameHash = frame.hash;
-      // One round trip: maps the screen (or uses the cache) and picks the next button together.
-      const step: Step & { cached?: boolean; screen?: number[] | null; sameScreen?: boolean; summary?: string } = await withTimeout(
-        this.client.action(api.ai.readAndPlan, {
-          ...frame,
-          goal: this.goal,
-          history: this.history,
-          ...(crop ? { crop } : {}),
-          ...(this.pendingTapLabel && this.screenSummary ? { previousSummary: this.screenSummary } : {}),
-          // Right after a tap the screen must be new: don't let the cache hand back the previous screen.
-          ...(this.lastScreenId && this.history.length ? { avoidScreenId: this.lastScreenId } : {}),
-        }),
-        20000,
-        'reading the screen',
-      );
-      if (step.screen && step.screen.length === 4) this.screenRegion = step.screen as Box;
-      // Cropped too tight (phone moved)? Forget the region so the retry looks at the whole view.
-      if (crop && !step.target && !step.done && !step.pin) {
-        this.screenRegion = null;
-        throw new Error('target not in the cropped view');
+      type PlanStep = Step & { cached?: boolean; screen?: number[] | null; sameScreen?: boolean; summary?: string };
+      let step: PlanStep;
+      if (this.partner) {
+        step = (await withTimeout(this.partnerStep(), 20000, 'reading the partner kiosk')) as PlanStep;
+      } else {
+        // Once we know where the kiosk is, send only that (plus a margin) so the AI sees the buttons bigger.
+        const crop = this.screenRegion ? padBox(this.screenRegion, 0.12) : undefined;
+        const frame = await this.eyes.captureFrame(4000, crop);
+        this.frameHash = frame.hash;
+        // One round trip: maps the screen (or uses the cache) and picks the next button together.
+        step = await withTimeout(
+          this.client.action(api.ai.readAndPlan, {
+            ...frame,
+            goal: this.goal,
+            history: this.history,
+            ...(crop ? { crop } : {}),
+            ...(this.pendingTapLabel && this.screenSummary ? { previousSummary: this.screenSummary } : {}),
+            // Right after a tap the screen must be new: don't let the cache hand back the previous screen.
+            ...(this.lastScreenId && this.history.length ? { avoidScreenId: this.lastScreenId } : {}),
+          }),
+          20000,
+          'reading the screen',
+        );
+        if (step.screen && step.screen.length === 4) this.screenRegion = step.screen as Box;
+        // Cropped too tight (phone moved)? Forget the region so the retry looks at the whole view.
+        if (crop && !step.target && !step.done && !step.pin) {
+          this.screenRegion = null;
+          throw new Error('target not in the cropped view');
+        }
       }
       console.log(`plan: ${Date.now() - t0}ms (cached screen: ${step.cached})`);
       if ((step as { screenId?: string }).screenId) this.lastScreenId = (step as { screenId?: string }).screenId!;
@@ -434,7 +518,7 @@ export class Flow {
   }
 
   private onPinDigitEntered() {
-    if (!(this.loop.wasOn || this.reached) || !this.pin.length) return;
+    if (!(this.partner || this.loop.wasOn || this.reached) || !this.pin.length) return; // partner kiosk confirms each digit itself
     this.pin.shift();
     if (this.pin.length) {
       this.guideNextDigit();

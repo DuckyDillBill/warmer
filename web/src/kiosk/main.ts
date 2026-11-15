@@ -209,6 +209,7 @@ function render() {
       break;
   }
   app.innerHTML = html;
+  requestAnimationFrame(publishLayout);
 }
 
 async function placeOrder() {
@@ -227,6 +228,31 @@ async function placeOrder() {
     placing = false;
   }
   go({ name: 'done' });
+}
+
+// Partner kiosk mode: publish this screen and where every button is (0–1 of the display), so a
+// Warmer phone in "Partner kiosk" mode can guide to exact positions and know the instant a tap lands.
+function publishLayout() {
+  if (!convex) return;
+  const W = document.documentElement.clientWidth || window.innerWidth;
+  const H = document.documentElement.clientHeight || window.innerHeight;
+  const els = Array.from(app.querySelectorAll<HTMLElement>('[data-act],[data-cat],[data-item],[data-key]'));
+  const buttons = els
+    .map((el) => {
+      const r = el.getBoundingClientRect();
+      const name = el.querySelector('.name, .cta') as HTMLElement | null;
+      const label = (name?.innerText || el.innerText || '').replace(/\s+/g, ' ').replace(/[^\p{L}\p{N}$.,'&+ -]/gu, '').trim();
+      return {
+        label: label || el.dataset.act || '',
+        rect: [r.left / W, r.top / H, r.right / W, r.bottom / H].map((n) => Math.round(n * 1000) / 1000),
+        kind: el.dataset.key ? 'digit' : 'button',
+      };
+    })
+    .filter((b) => b.rect[2] > b.rect[0] && b.rect[3] > b.rect[1]);
+  const titleEl = app.querySelector('h1, .done .num, .detail .name, .start .title') as HTMLElement | null;
+  const title = (titleEl?.innerText || screen.name).replace(/\s+/g, ' ').trim();
+  const dots = screen.name === 'pin' ? ` (${(screen as { digits: number }).digits} of 4 digits entered)` : '';
+  convex.mutation(anyApi.partner.publish, { screen: screen.name, title: title + dots, buttons }).catch(() => {});
 }
 
 function restart() {
