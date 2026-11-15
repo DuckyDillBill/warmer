@@ -6,6 +6,7 @@ import { ScreenWatcher } from './screenWatcher';
 import { Broadcaster } from './broadcast';
 import { ShiftTracker } from './tracker';
 import { BoxRefiner } from './refine';
+import { HoverCorrector } from './parallax';
 
 type Box = [number, number, number, number];
 type InMsg =
@@ -34,6 +35,8 @@ let landmarker: HandLandmarker | null = null;
 const watcher = new ScreenWatcher();
 const tracker = new ShiftTracker(); // keeps the box on its button when the phone moves
 const refiner = new BoxRefiner(); // snaps the AI's rough box to the button's real edges
+const hover = new HoverCorrector(); // fixes the offset when the finger hovers off the screen
+hover.enabled = params.get('hover') !== '0'; // ?hover=0 turns the correction off for comparison
 let handBox: Box | null = null;
 let lastMovedSent: Box | null = null;
 /** The target as it sits in the current frame (target + scene shift since Gemini saw it). */
@@ -196,7 +199,7 @@ function loop() {
     const res = landmarker.detectForVideo(video, now);
     const hand = res.landmarks?.[0];
     if (hand) {
-      const tip = hand[8];
+      const tip = hover.correct(hand, now); // estimated touch point, not the raw hovering fingertip
       fingertip = { x: tip.x, y: tip.y };
       let minX = 1, minY = 1, maxX = 0, maxY = 0;
       for (const p of hand) {
