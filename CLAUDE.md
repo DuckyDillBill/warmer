@@ -138,7 +138,7 @@ Warmer guides digit by digit with haptics and dings only.
   `expo-speech-recognition` (dev build), `expo-audio` (fallback recording), `expo-keep-awake`, `convex`.
 - Put every native package in from the start: adding one later means another 15-minute cloud build.
 - `app.json` iOS infoPlist: `NSCameraUsageDescription`, `NSMicrophoneUsageDescription`,
-  `NSSpeechRecognitionUsageDescription`. App name "Warmer", bundle id `com.warmer.app`.
+  `NSSpeechRecognitionUsageDescription`. App name "Warmer", bundle id `com.ashkon.warmer`.
 - WebView props for camera on iOS: `allowsInlineMediaPlayback`,
   `mediaPlaybackRequiresUserAction={false}`, `mediaCapturePermissionGrantType="grant"`.
 - UI: one main screen. A giant "Hold to talk" button filling most of the screen, the live

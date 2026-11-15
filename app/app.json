@@ -9,7 +9,7 @@
     "backgroundColor": "#14110f",
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.warmer.app",
+      "bundleIdentifier": "com.ashkon.warmer",
       "infoPlist": {
         "NSCameraUsageDescription": "Warmer uses the camera to read the touchscreen in front of you and track your fingertip.",
         "NSMicrophoneUsageDescription": "Warmer listens when you hold the button so you can say what you want.",
@@ -17,7 +17,7 @@
       }
     },
     "android": {
-      "package": "com.warmer.app",
+      "package": "com.ashkon.warmer",
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO",
