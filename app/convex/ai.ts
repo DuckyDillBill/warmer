@@ -35,10 +35,13 @@ async function gemini(parts: unknown[], model: string): Promise<any> {
       }),
     });
   let res = await send(true);
-  // If this model name isn't available on our key, fall back to Google's rolling Flash alias.
-  if (res.status === 404 && model !== 'gemini-flash-latest') return gemini(parts, 'gemini-flash-latest');
-  // Some models reject 'minimal'. Fall back to the model's default rather than failing the demo.
-  if (res.status === 400) res = await send(false);
+  // Some models reject 'minimal'. Retry with the model's default thinking.
+  if (!res.ok) res = await send(false);
+  // Still failing (e.g. model name not available on this key)? Fall back to the old known-good alias.
+  if (!res.ok && model !== 'gemini-flash-latest') {
+    console.warn(`gemini ${model} failed with ${res.status}: ${(await res.text()).slice(0, 200)}; falling back`);
+    return gemini(parts, 'gemini-flash-latest');
+  }
   if (!res.ok) throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 300)}`);
   console.log(`gemini ${model} took ${Date.now() - started}ms`);
   const data = await res.json();
