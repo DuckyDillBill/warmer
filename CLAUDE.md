@@ -3,7 +3,7 @@
 > Say what you want. Warmer guides your finger to it.
 
 Hackathon build (YC Consumer Mobile Hackathon, Nov 15 2026). Two people: **Dylan** and **Ash**.
-Feature freeze 3:00 PM. Keep everything simple, working and demoable. No auth, no accounts.
+Demo due 6:30 PM. Feature freeze 5:00 PM. Keep everything simple, working and demoable. No auth, no accounts.
 
 ## 1. What it is
 Warmer lets a blind person use any touchscreen that doesn't talk: restaurant kiosks,
@@ -179,9 +179,11 @@ No speech or screen reader on the kiosk: it must be a screen that doesn't talk.
 | 12:30 | Integration: fingertip + target box + haptics together |
 | 1:00  | **Eyes closed, haptics guide you to one button.** Core demo works |
 | 1:00  | Simulator build uploaded to Revyl with one passing test |
-| 2:30  | Full order: voice goal → steps → upsell warning → PIN → "Order #42" |
-| 3:00  | Freeze. 20 eyes-closed runs, 5 different people |
-| 3:15  | Production build → TestFlight |
+| 3:00  | Full order: voice goal → steps → upsell warning → PIN → "Order #42" |
+| 3:00–5:00 | Tune the feel, Revyl tests passing, extras only if everything works |
+| 5:00  | Freeze. 20 eyes-closed runs, 5 different people. Record a backup demo video |
+| 5:15  | Production build → TestFlight |
+| 5:45–6:30 | Rehearse pitch, set up iPad + phone stand + /live on the projector |
 
 ## 11. Rules for agents
 - Plan first, then build. Small commits, push often, pull before starting work.
