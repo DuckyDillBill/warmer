@@ -119,3 +119,4 @@ main > .btn, .row .btn { min-height: clamp(80px, 14vh, 170px); font-size: clamp(
 main { background: #fbe8cf; }
 .tile, .key { border: 3px solid #d8b98f; }
 .btn.ghost { border: 3px solid #c9a679; }
+.start .cta { border: 0; font-family: inherit; cursor: pointer; box-shadow: 0 6px 0 rgba(0,0,0,.25); }

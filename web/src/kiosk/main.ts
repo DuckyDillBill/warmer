@@ -93,11 +93,11 @@ function render() {
   let html = '';
   switch (s.name) {
     case 'start':
-      html = `<button class="start" data-act="begin">
+      html = `<div class="start">
         <div class="big">🍔</div>
         <div class="title" data-logo>Bun <span>&amp;</span> Done</div>
-        <div class="cta">Tap to start your order</div>
-      </button>`;
+        <button class="cta" data-act="begin">Tap to start your order</button>
+      </div>`;
       break;
 
     case 'categories':
