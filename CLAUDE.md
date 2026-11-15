@@ -130,8 +130,6 @@ Designed for blind users. **Few words, never overlapping, never stale.**
   picture changes (twice in a row), or the finger reached the button then lifted for ~0.8 s.
   Kiosks act on lift, so we wait 0.5 s, then read. The AI is told the previous screen and reports
   `sameScreen` if the press didn't take. PIN digits: a steady 1 s hold counts.
-  If no press is noticed, every ~4 s a quiet AI check asks whether the screen already moved on;
-  if it did, Warmer carries on (never waits for a button that's gone).
 - **Always a fresh read** of the screen (no screen cache on the live path: cached boxes were from
   where the phone used to be, and kiosk screens look alike).
 - **Finger:** best = a small **blue or pink sticker on the fingernail** (`eyes/marker.ts`), found every

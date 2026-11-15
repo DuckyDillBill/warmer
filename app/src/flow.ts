@@ -52,8 +52,7 @@ export class Flow {
   private steadyAnchor: Point | null = null;
   private steadySince = 0;
   private leftAt = 0;
-  private pendingTapLabel = '';
-  private verifying = false; // a quiet "did the screen already change?" check is in flight
+  private pendingTapLabel = ''; // label of the button just pressed, until the next screen is confirmed // when the finger left the button after reaching it
   private screenSummary = ''; // what the AI said the current screen is
   private pressWatch: ReturnType<typeof setInterval> | null = null;
   private frameHash = ''; // camera hash of the screen we're guiding on (hand excluded) // finger got onto (or right next to) the current button at least once
@@ -219,7 +218,6 @@ export class Flow {
     if (!active) return this.resetSteady();
     const onButton = !!this.finger && inBox(this.finger, grow(box!, 0.03));
     if (onButton) {
-      if (!this.reached && this.state === 'guiding' && !this.pressWatch) this.watchAfterPress();
       this.reached = true;
       this.leftAt = 0;
     } else if (this.reached && !this.leftAt) {
@@ -354,7 +352,7 @@ export class Flow {
   private onFingerOnTarget() {
     if (this.state !== 'guiding') return;
     say('Press.');
-    if (!this.pressWatch) this.watchAfterPress();
+    this.watchAfterPress();
   }
 
   /**
@@ -368,7 +366,6 @@ export class Flow {
     let changedTicks = 0;
     let reminded = false;
     const started = Date.now();
-    let lastCheck = Date.now() - 1000; // first check ~3 s in
     this.pressWatch = setInterval(() => {
       const box = this.target?.box;
       if (this.state !== 'guiding' || this.planning || !box) return this.clearTapTimer();
@@ -383,52 +380,11 @@ export class Flow {
           })
           .catch(() => {});
       }
-      // Didn't notice a press? Every ~4 s, quietly ask the AI whether the screen already moved on,
-      // so we never sit waiting for a button that isn't there anymore.
-      if (!this.partner && Date.now() - lastCheck > 4000) {
-        lastCheck = Date.now();
-        this.verifyPress();
-      }
       if (!reminded && Date.now() - started > 10000 && !isSpeaking()) {
         reminded = true;
         say('Press the button.');
       }
     }, 500);
-  }
-
-  /**
-   * Quiet check while waiting for a press: has the screen already changed (a press we didn't see)?
-   * Same screen: say nothing, keep waiting. New screen: carry on exactly as if we'd seen the press.
-   */
-  private async verifyPress() {
-    if (this.verifying || this.planning || !this.client || !this.target || !this.screenSummary) return;
-    this.verifying = true;
-    const label = this.target.label;
-    try {
-      const crop = this.screenRegion ? padBox(this.screenRegion, 0.12) : undefined;
-      const frame = await this.eyes.captureFrame(4000, crop);
-      const step = await withTimeout(
-        this.client.action(api.ai.readAndPlan, {
-          ...frame,
-          goal: this.goal,
-          history: [...this.history, `Tapped "${label}"`],
-          ...(crop ? { crop } : {}),
-          previousSummary: this.screenSummary,
-        }),
-        15000,
-        'checking the screen',
-      );
-      // Only act if nothing else happened meanwhile, and the AI is sure the screen moved on.
-      if (this.state !== 'guiding' || this.planning || this.target?.label !== label) return;
-      if (!step.sameScreen && step.summary && step.summary !== this.screenSummary) {
-        this.reached = true;
-        this.confirmTap();
-      }
-    } catch (e) {
-      console.warn('verify failed', e);
-    } finally {
-      this.verifying = false;
-    }
   }
 
   private async plan(attempt = 0, internal = false): Promise<void> {
