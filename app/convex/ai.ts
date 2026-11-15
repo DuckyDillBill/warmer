@@ -3,7 +3,10 @@
 import { action } from './_generated/server';
 import { internal } from './_generated/api';
 import { v } from 'convex/values';
-import type { Id } from './_generated/dataModel';
+import type { Doc, Id } from './_generated/dataModel';
+
+// Convex actions run on Node-like runtime; declare process.env so tsc doesn't need @types/node.
+declare const process: { env: Record<string, string | undefined> };
 
 type Button = { label: string; box: number[]; kind: string };
 
@@ -55,8 +58,8 @@ export const mapScreen = action({
   args: { jpeg: v.string(), hash: v.string() },
   handler: async (ctx, { jpeg, hash }): Promise<{ screenId: Id<'screens'>; summary: string; buttons: Button[]; cached: boolean }> => {
     // 1) Screen memory: same screen seen before → instant.
-    const recent = await ctx.runQuery(internal.screens.recent, {});
-    const hit = recent.find((s) => hamming(s.hash, hash) <= HASH_MATCH_BITS);
+    const recent: Doc<'screens'>[] = await ctx.runQuery(internal.screens.recent, {});
+    const hit = recent.find((s: Doc<'screens'>) => hamming(s.hash, hash) <= HASH_MATCH_BITS);
     if (hit) return { screenId: hit._id, summary: hit.summary, buttons: hit.buttons, cached: true };
 
     // 2) New screen → ask Gemini once.
@@ -88,14 +91,25 @@ Rules:
 - "say": what to tell them before guiding, max 8 words, e.g. "Burgers. Find it." Never read prices unless useful.
 Return JSON: {"targetIndex": number|null, "say": string, "warning": string|null, "pin": boolean, "done": boolean, "doneSay": string|null}`;
 
+type Target = { label: string; box: number[] };
+type StepResult = {
+  target: Target | null;
+  say: string;
+  warning: string | null;
+  pin: boolean;
+  done: boolean;
+  doneSay: string | null;
+  digits: Target[];
+};
+
 export const nextStep = action({
   args: { goal: v.string(), history: v.array(v.string()), screenId: v.id('screens') },
-  handler: async (ctx, { goal, history, screenId }) => {
-    const screen = await ctx.runQuery(internal.screens.get, { id: screenId });
+  handler: async (ctx, { goal, history, screenId }): Promise<StepResult> => {
+    const screen: Doc<'screens'> | null = await ctx.runQuery(internal.screens.get, { id: screenId });
     if (!screen) throw new Error('Unknown screen');
     const out = await gemini([{ text: STEP_PROMPT(goal, history, screen.summary, screen.buttons) }]);
     const idx = typeof out.targetIndex === 'number' ? out.targetIndex : null;
-    const b = idx !== null ? screen.buttons[idx] : undefined;
+    const b: Button | undefined = idx !== null ? screen.buttons[idx] : undefined;
     return {
       target: b ? { label: b.label, box: b.box } : null,
       say: String(out.say ?? ''),
@@ -103,14 +117,14 @@ export const nextStep = action({
       pin: !!out.pin,
       done: !!out.done,
       doneSay: out.doneSay ? String(out.doneSay) : null,
-      digits: screen.buttons.filter((x) => x.kind === 'digit').map((x) => ({ label: x.label, box: x.box })),
+      digits: screen.buttons.filter((x: Button) => x.kind === 'digit').map((x: Button) => ({ label: x.label, box: x.box })),
     };
   },
 });
 
 export const transcribeGoal = action({
   args: { audio: v.string(), mimeType: v.optional(v.string()) },
-  handler: async (_ctx, { audio, mimeType }) => {
+  handler: async (_ctx, { audio, mimeType }): Promise<{ goal: string }> => {
     const out = await gemini([
       { text: 'A person said what they want to do on a touchscreen (usually ordering food). Return JSON {"goal": string} with what they want, as a short phrase in their words. If nothing intelligible was said, return {"goal": ""}.' },
       { inline_data: { mime_type: mimeType ?? 'audio/mp4', data: audio } },
