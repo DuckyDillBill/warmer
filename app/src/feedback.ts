@@ -62,6 +62,10 @@ export function isSpeaking() {
 }
 
 let watchdog: ReturnType<typeof setTimeout> | null = null;
+// Set when the last sentence never finished normally (watchdog fired, or iOS stopped it). iOS can leave
+// its voice engine paused after an interruption (mic on/off, volume keys, a call); every new sentence
+// then waits silently behind the stuck one, forever. Before the next sentence we clear iOS's queue.
+let needsReset = false;
 
 function next() {
   if (watchdog) clearTimeout(watchdog);
@@ -85,6 +89,7 @@ function next() {
   // the sentence was cut. Say it again once, unless a newer instruction is already waiting.
   const cut = () => {
     if (finished) return;
+    needsReset = true;
     if (!u.low && !u.retried && queue.length === 0) {
       finished = true;
       queue.unshift({ ...u, retried: true });
@@ -97,8 +102,17 @@ function next() {
   // Watchdog: iOS sometimes never reports that speech finished (e.g. right after recording audio).
   // Without this, the queue waits forever and Warmer goes silent. Move on after a generous estimate.
   // Set BEFORE speaking, so even if speak() throws, the queue keeps moving.
-  watchdog = setTimeout(done, 1500 + u.text.length * 90);
+  watchdog = setTimeout(() => {
+    if (finished) return;
+    console.warn('speech watchdog: iOS never finished, resetting the voice');
+    needsReset = true;
+    done();
+  }, 1500 + u.text.length * 90);
   try {
+    if (needsReset) {
+      needsReset = false;
+      Speech.stop(); // flush a paused/stuck iOS speech queue so this sentence actually plays
+    }
     Speech.speak(u.text, { rate: u.rate, onDone, onStopped: cut, onError: cut });
   } catch (e) {
     console.warn('speech failed', e);
