@@ -1,4 +1,4 @@
-export {};
+import { convexMutation } from './convexHttp';
 // "Bun & Done" — a fake fast-food self-order kiosk for the Warmer demo (iPad, portrait).
 // Deliberately a screen that doesn't talk: no speech, no screen-reader hints.
 type Item = { id: string; name: string; emoji: string; price: number; desc: string; meal?: boolean };
@@ -55,6 +55,7 @@ let screen: KScreen = { name: 'start' };
 let cart: Line[] = [];
 let roundedUp = 0;
 let doneTimer: number | undefined;
+let orderNumber = 42;
 
 const app = document.getElementById('app')!;
 const money = (n: number) => '$' + n.toFixed(2);
@@ -186,13 +187,27 @@ function render() {
       html = `<div class="done">
         <div class="emoji" style="font-size:120px">✅</div>
         <div class="msg">Thank you!</div>
-        <div class="num">Order #42</div>
+        <div class="num">Order #${orderNumber}</div>
         <div class="msg">Please wait for your number.</div>
       </div>`;
       doneTimer = window.setTimeout(() => restart(), 30000);
       break;
   }
   app.innerHTML = html;
+}
+
+// Save the order to Convex so it shows up live on /live, then show the confirmation.
+// If the backend is unreachable, the demo still finishes with the default number.
+async function placeOrder() {
+  const items = roundedUp ? [...cart, { name: 'Charity round-up', price: roundedUp }] : [...cart];
+  const t = Math.round(total() * 100) / 100;
+  try {
+    orderNumber = await convexMutation<number>('orders:place', { items, total: t });
+  } catch (err) {
+    console.warn('Could not save order', err);
+    orderNumber = 42;
+  }
+  go({ name: 'done' });
 }
 
 function restart() {
@@ -241,7 +256,9 @@ app.addEventListener('click', (e) => {
     }
     case 'round-no': return go({ name: 'pin', digits: 0 });
     case 'pin-cancel': return go({ name: 'cart' });
-    case 'pin-ok': if (s.name === 'pin' && s.digits === 4) go({ name: 'done' }); return;
+    case 'pin-ok':
+      if (s.name === 'pin' && s.digits === 4) placeOrder();
+      return;
   }
 });
 
