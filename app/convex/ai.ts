@@ -193,17 +193,32 @@ What has happened so far: ${history.length ? history.map((h, i) => `${i + 1}. ${
 
 1) List every tappable control visible ON THE SCREEN (ignore anything outside the screen and any hand or finger).
 For each: "label" (visible text, or 1–3 words if it's only an icon/picture), "kind" ("digit" for single number keys on a keypad, otherwise "button"),
-"box_2d": [ymin, xmin, ymax, xmax] normalized 0–1000 relative to the WHOLE photo, tight around the tappable area.
+"box_2d": [ymin, xmin, ymax, xmax] normalized 0–1000 relative to the WHOLE photo, tight around the button's full visible shape (its colored background/border), not just its text.
 Also "summary": one short line saying what this screen is.
-2) Pick the ONE button (by its index in your list) to tap next that moves them toward their goal.
+2) Pick the ONE button (by its index in your list) to tap next that moves them toward their goal,
+and give "targetPoint": [y, x] (0–1000, whole photo) at the exact visual center of that button.
 ${STEP_RULES}
-Return JSON: {"summary": string, "buttons": [{"label": string, "kind": string, "box_2d": [number, number, number, number]}], "targetIndex": number|null, "say": string, "warning": string|null, "pin": boolean, "done": boolean, "doneSay": string|null}`;
+Return JSON: {"summary": string, "buttons": [{"label": string, "kind": string, "box_2d": [number, number, number, number]}], "targetIndex": number|null, "targetPoint": [number, number]|null, "say": string, "warning": string|null, "pin": boolean, "done": boolean, "doneSay": string|null}`;
 
 function toStep(out: any, buttons: Button[]): StepResult {
   const idx = typeof out.targetIndex === 'number' ? out.targetIndex : null;
   const b: Button | undefined = idx !== null ? buttons[idx] : undefined;
+  let box = b?.box;
+  // Models point more precisely than they draw boxes: if we got a center point that sits inside
+  // (or right next to) the box, re-center the box on it, keeping its size.
+  const pt = out.targetPoint;
+  if (b && box && Array.isArray(pt) && pt.length === 2) {
+    const py = clamp(pt[0] / 1000);
+    const px = clamp(pt[1] / 1000);
+    const [x0, y0, x1, y1] = box;
+    const w = x1 - x0;
+    const h = y1 - y0;
+    if (px > x0 - w * 0.25 && px < x1 + w * 0.25 && py > y0 - h * 0.25 && py < y1 + h * 0.25) {
+      box = [clamp(px - w / 2), clamp(py - h / 2), clamp(px + w / 2), clamp(py + h / 2)];
+    }
+  }
   return {
-    target: b ? { label: b.label, box: b.box } : null,
+    target: b && box ? { label: b.label, box } : null,
     say: String(out.say ?? ''),
     warning: out.warning ? String(out.warning) : null,
     pin: !!out.pin,

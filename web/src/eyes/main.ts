@@ -5,6 +5,7 @@ import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
 import { ScreenWatcher } from './screenWatcher';
 import { Broadcaster } from './broadcast';
 import { ShiftTracker } from './tracker';
+import { BoxRefiner } from './refine';
 
 type Box = [number, number, number, number];
 type InMsg =
@@ -32,6 +33,7 @@ let fingertip: { x: number; y: number } | null = null;
 let landmarker: HandLandmarker | null = null;
 const watcher = new ScreenWatcher();
 const tracker = new ShiftTracker(); // keeps the box on its button when the phone moves
+const refiner = new BoxRefiner(); // snaps the AI's rough box to the button's real edges
 let handBox: Box | null = null;
 let lastMovedSent: Box | null = null;
 /** The target as it sits in the current frame (target + scene shift since Gemini saw it). */
@@ -55,15 +57,18 @@ function receive(msg: InMsg) {
   switch (msg.type) {
     case 'captureFrame': {
       tracker.snapshot(video);
+      refiner.snapshot(video);
       const jpeg = captureJpeg();
       send({ type: 'frame', id: msg.id, jpeg, hash: watcher.hash() });
       break;
     }
     case 'setTarget':
-      target = msg.box;
+      // Snap to the button's real edges first. lastMovedSent stays the app's box, so if snapping
+      // changed it, the loop below immediately tells the app the corrected box.
+      target = msg.box ? refiner.refine(msg.box, video) : null;
       if (target) tracker.reset(video);
       else tracker.clear();
-      lastMovedSent = target;
+      lastMovedSent = msg.box;
       targetLabel = msg.label ?? '';
       targetPrivate = !!msg.private;
       break;

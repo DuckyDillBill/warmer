@@ -118,16 +118,19 @@ transcribeGoal({ audio /* base64 m4a */ }) -> { goal: string }
 - Tables: `screens { hash, summary, buttons, createdAt }`, `sessions { goal, history, status, createdAt }`.
 
 ## 6. Feel: the guidance (this is the product, tune it carefully)
-`guidance.ts` is a pure function: `(fingertip | null, targetBox | null) -> { state, pulseMs, strength }`
-- `none`: no hand → no haptics.
-- Distance = fingertip to box center, divided by the frame diagonal.
-- `far → near`: pulse interval goes smoothly from ~600ms down to ~70ms; haptic strength
-  goes from Light to Heavy.
-- `on`: fingertip inside the **center 60%** of the box for **150ms** → success haptic,
-  a short pleasant ding, and say "Tap". Don't repeat the ding while it stays on.
-- Smooth the fingertip (One Euro filter or a simple exponential moving average) so it doesn't jitter.
-- After `on`, the next `screenChanged` counts as the tap: immediately speak the target's label
-  ("Cheeseburger"), then capture a frame → mapScreen → nextStep → speak `say`.
+Designed for blind users. Research we followed: combine a constant sound for *how far* with short
+spoken corrections for *which way* (verbal = precision, sound = magnitude); users split between
+preferring haptics and audio, so do both.
+- **Searching:** a constant beep like a parking sensor (`feedback.ts`). Closer = faster and higher pitch
+  (8 pitches, `assets/beep0-7.wav`), with a vibration on every beep that gets stronger when close.
+- **Direction:** every ~1.6 s a short spoken word: "left", "up", "a little right" (camera frame, not mirrored).
+- **On the button** (center 60% for 150 ms): ding + "Tap" once, then a bright steady tone and a strong
+  continuous buzz while the finger stays on.
+- **No hand in view:** soft low blip; after 2.5 s "I can't see your hand. Reach toward the screen."
+- **Tap detection:** finger reached the button, then left it for 0.6 s (works handheld), or `screenChanged`.
+- **Box accuracy:** Gemini gives box + exact center point; the camera page snaps the box to the button's
+  real edges (`eyes/refine.ts`) and keeps it on the button as the phone moves (`eyes/tracker.ts`).
+- Smooth the fingertip (exponential moving average) so it doesn't jitter.
 
 **PIN pad:** the user types the PIN into a secure field **on the phone**. It stays in memory only,
 is never spoken, never logged, never sent to the server, and is cleared when the order ends.
