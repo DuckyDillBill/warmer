@@ -47,6 +47,7 @@ export class Flow {
   private planning = false;
   private changedWhilePlanning = false;
   private tapTimer: ReturnType<typeof setTimeout> | null = null;
+  private reached = false; // finger got onto (or right next to) the current button at least once
   private lastScreenId: string | null = null; // screen used for the current step; after a tap we skip it in the cache
   private replans = 0; // restarts caused by the screen moving mid-read; capped so camera noise can't loop forever
   private lastInstruction = '';
@@ -90,6 +91,17 @@ export class Flow {
     this.watchForTap();
   }
 
+  /** The camera page tracked the button as the phone moved: slide the target to match. */
+  onTargetMoved(box: Box) {
+    if (!this.target) return;
+    // Update in place so the guide loop keeps its "on" state (it compares the box by reference).
+    const b = this.target.box;
+    b[0] = box[0];
+    b[1] = box[1];
+    b[2] = box[2];
+    b[3] = box[3];
+  }
+
   /**
    * Tap detection that doesn't depend on the camera noticing the screen change:
    * once the finger has reached the button ("Tap."), the hand leaving the button for ~0.9 s
@@ -97,15 +109,19 @@ export class Flow {
    */
   private watchForTap() {
     const box = this.target?.box;
-    const armed = (this.state === 'guiding' || this.state === 'pin') && !!box && this.loop.wasOn && !this.planning;
-    if (!armed) return this.clearTapTimer();
-    const away = !this.finger || !inOnZone(this.finger, grow(box!, 0.04));
-    if (!away) return this.clearTapTimer();
+    const active = (this.state === 'guiding' || this.state === 'pin') && !!box && !this.planning;
+    if (!active) return this.clearTapTimer();
+    // Anywhere on the button (plus a little margin) counts as reaching it. Handheld tracking is noisy,
+    // so don't require the exact "Tap" zone before we start watching for the tap.
+    const onButton = !!this.finger && inBox(this.finger, grow(box!, 0.03));
+    if (onButton || this.loop.wasOn) this.reached = true;
+    if (!this.reached) return;
+    if (onButton) return this.clearTapTimer();
     if (this.tapTimer) return;
     this.tapTimer = setTimeout(() => {
       this.tapTimer = null;
-      if (this.loop.wasOn && !this.planning) this.onScreenChanged();
-    }, 900);
+      if (this.reached && !this.planning) this.onScreenChanged();
+    }, 600);
   }
 
   private clearTapTimer() {
@@ -121,7 +137,7 @@ export class Flow {
       return;
     }
     if (this.state !== 'guiding') return;
-    if (this.target && this.loop.wasOn) {
+    if (this.target && (this.loop.wasOn || this.reached)) {
       say(this.target.label);
       this.history.push(`Tapped "${this.target.label}"`);
     } else {
@@ -198,6 +214,8 @@ export class Flow {
   // ---------- core ----------
   private setTarget(t: Target | null) {
     this.target = t;
+    this.reached = false;
+    this.clearTapTimer();
     this.loop.set(this.finger, t?.box ?? null);
     this.eyes.setTarget(t?.box ?? null, t?.label ?? '');
   }
@@ -305,13 +323,15 @@ export class Flow {
     }
     const box = [...key.box] as Box; // fresh array so a repeated digit still resets the "on" state
     this.target = { label: 'next digit', box };
+    this.reached = false;
+    this.clearTapTimer();
     this.loop.set(this.finger, box);
     this.eyes.setTarget(box, 'PIN', true); // private: the projector never sees PIN entry
     this.set('pin', `Guiding to the next PIN digit (${this.pin.length} left)`);
   }
 
   private onPinDigitEntered() {
-    if (!this.loop.wasOn || !this.pin.length) return;
+    if (!(this.loop.wasOn || this.reached) || !this.pin.length) return;
     this.pin.shift();
     if (this.pin.length) {
       this.guideNextDigit();
@@ -341,6 +361,10 @@ function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
       },
     );
   });
+}
+
+function inBox(p: Point, b: Box): boolean {
+  return p.x >= b[0] && p.x <= b[2] && p.y >= b[1] && p.y <= b[3];
 }
 
 /** Box expanded by `m` on every side (a little forgiveness around the button). */

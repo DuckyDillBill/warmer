@@ -8,6 +8,7 @@ export type EyesEvents = {
   onReady?: () => void;
   onFingertip?: (p: Point | null) => void;
   onScreenChanged?: (hash: string) => void;
+  onTargetMoved?: (box: Box) => void; // the camera page tracked the button as the phone moved
   onError?: (message: string) => void;
 };
 
@@ -42,6 +43,9 @@ export class Eyes {
         break;
       case 'nohand':
         this.events.onFingertip?.(null);
+        break;
+      case 'targetMoved':
+        this.events.onTargetMoved?.(msg.box as Box);
         break;
       case 'screenChanged':
         this.events.onScreenChanged?.(msg.hash);

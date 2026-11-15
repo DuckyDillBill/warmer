@@ -50,6 +50,7 @@ export default function App() {
       },
       onFingertip: (p) => flow.onFingertip(p),
       onScreenChanged: () => flow.onScreenChanged(),
+      onTargetMoved: (box) => flow.onTargetMoved(box),
       onError: (m) => setStatus(`Camera problem: ${m}`),
     };
     flow.subscribe((s) => {

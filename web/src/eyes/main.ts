@@ -4,6 +4,7 @@
 import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
 import { ScreenWatcher } from './screenWatcher';
 import { Broadcaster } from './broadcast';
+import { ShiftTracker } from './tracker';
 
 type Box = [number, number, number, number];
 type InMsg =
@@ -30,6 +31,11 @@ let targetPrivate = false; // PIN entry: nothing is broadcast to the projector
 let fingertip: { x: number; y: number } | null = null;
 let landmarker: HandLandmarker | null = null;
 const watcher = new ScreenWatcher();
+const tracker = new ShiftTracker(); // keeps the box on its button when the phone moves
+let handBox: Box | null = null;
+let lastMovedSent: Box | null = null;
+/** The target as it sits in the current frame (target + scene shift since Gemini saw it). */
+const liveTarget = (): Box | null => (target ? tracker.apply(target) : null);
 // Broadcast to the projector's /watch page when running in the app (or with ?broadcast=1).
 
 // ---------- bridge ----------
@@ -48,12 +54,16 @@ function send(msg: Record<string, unknown>) {
 function receive(msg: InMsg) {
   switch (msg.type) {
     case 'captureFrame': {
+      tracker.snapshot(video);
       const jpeg = captureJpeg();
       send({ type: 'frame', id: msg.id, jpeg, hash: watcher.hash() });
       break;
     }
     case 'setTarget':
       target = msg.box;
+      if (target) tracker.reset(video);
+      else tracker.clear();
+      lastMovedSent = target;
       targetLabel = msg.label ?? '';
       targetPrivate = !!msg.private;
       break;
@@ -110,11 +120,13 @@ const captureCanvas = document.createElement('canvas');
 function captureJpeg(): string {
   const w = video.videoWidth;
   const h = video.videoHeight;
-  const scale = Math.min(1, 1024 / w);
+  // 768 px wide: Gemini reads it as fewer image tiles, so it uploads and answers faster.
+  // Kiosk buttons are big; this is plenty of detail.
+  const scale = Math.min(1, 768 / w);
   captureCanvas.width = Math.round(w * scale);
   captureCanvas.height = Math.round(h * scale);
   captureCanvas.getContext('2d')!.drawImage(video, 0, 0, captureCanvas.width, captureCanvas.height);
-  return captureCanvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+  return captureCanvas.toDataURL('image/jpeg', 0.7).split(',')[1];
 }
 
 // ---------- drawing ----------
@@ -139,8 +151,9 @@ function draw() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, overlay.clientWidth, overlay.clientHeight);
   const r = videoRect();
-  if (target) {
-    const [x0, y0, x1, y1] = target;
+  const t = liveTarget();
+  if (t) {
+    const [x0, y0, x1, y1] = t;
     ctx.lineWidth = 4;
     ctx.strokeStyle = '#ff9a3c';
     ctx.strokeRect(r.x + x0 * r.w, r.y + y0 * r.h, (x1 - x0) * r.w, (y1 - y0) * r.h);
@@ -185,7 +198,8 @@ function loop() {
         minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
         maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y);
       }
-      watcher.setHand([minX, minY, maxX, maxY]);
+      handBox = [minX, minY, maxX, maxY];
+      watcher.setHand(handBox);
       if (now - lastSent > 30) {
         send({ type: 'fingertip', x: tip.x, y: tip.y, t: Date.now() });
         lastSent = now;
@@ -193,10 +207,20 @@ function loop() {
     } else {
       if (fingertip) send({ type: 'nohand', t: Date.now() });
       fingertip = null;
+      handBox = null;
       watcher.setHand(null);
     }
+    // Follow the scene every other frame and tell the app when the box has moved.
+    if (target && frames % 2 === 0) {
+      tracker.update(video, handBox);
+      const t = liveTarget()!;
+      if (!lastMovedSent || Math.abs(t[0] - lastMovedSent[0]) + Math.abs(t[1] - lastMovedSent[1]) > 0.004) {
+        lastMovedSent = t;
+        send({ type: 'targetMoved', box: t });
+      }
+    }
     if (targetPrivate) broadcaster.hide(now);
-    else broadcaster.tick(now, video, fingertip, target, targetLabel);
+    else broadcaster.tick(now, video, fingertip, liveTarget(), targetLabel);
     const changed = watcher.update(video, now);
     if (changed) send({ type: 'screenChanged', hash: watcher.hash() });
     frames++;
