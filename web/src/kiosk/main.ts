@@ -1,4 +1,6 @@
-import { convexMutation } from './convexHttp';
+import { ConvexClient } from 'convex/browser';
+import { anyApi } from 'convex/server';
+
 // "Bun & Done" — a fake fast-food self-order kiosk for the Warmer demo (iPad, portrait).
 // Deliberately a screen that doesn't talk: no speech, no screen-reader hints.
 type Item = { id: string; name: string; emoji: string; price: number; desc: string; meal?: boolean };
@@ -56,6 +58,10 @@ let cart: Line[] = [];
 let roundedUp = 0;
 let doneTimer: number | undefined;
 let orderNumber = 42;
+let placing = false;
+
+const convexUrl = import.meta.env.VITE_CONVEX_URL;
+const convex = convexUrl ? new ConvexClient(convexUrl) : null;
 
 const app = document.getElementById('app')!;
 const money = (n: number) => '$' + n.toFixed(2);
@@ -196,16 +202,20 @@ function render() {
   app.innerHTML = html;
 }
 
-// Save the order to Convex so it shows up live on /live, then show the confirmation.
-// If the backend is unreachable, the demo still finishes with the default number.
 async function placeOrder() {
-  const items = roundedUp ? [...cart, { name: 'Charity round-up', price: roundedUp }] : [...cart];
-  const t = Math.round(total() * 100) / 100;
+  if (placing) return;
+  placing = true;
+  orderNumber = 42;
   try {
-    orderNumber = await convexMutation<number>('orders:place', { items, total: t });
+    if (convex) {
+      const order = convex.mutation(anyApi.orders.place, { items: cart, total: Math.round(total() * 100) / 100 });
+      const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000));
+      orderNumber = await Promise.race([order, timeout]);
+    }
   } catch (err) {
-    console.warn('Could not save order', err);
-    orderNumber = 42;
+    console.error('orders:place failed, using #42', err);
+  } finally {
+    placing = false;
   }
   go({ name: 'done' });
 }
@@ -218,7 +228,7 @@ function restart() {
 
 app.addEventListener('click', (e) => {
   const el = (e.target as HTMLElement).closest('[data-act],[data-cat],[data-item],[data-key]') as HTMLElement | null;
-  if (!el) return;
+  if (!el || placing) return;
   const s = screen;
   if (el.dataset.cat) {
     const cat = MENU.find((c) => c.id === el.dataset.cat)!;
@@ -256,16 +266,14 @@ app.addEventListener('click', (e) => {
     }
     case 'round-no': return go({ name: 'pin', digits: 0 });
     case 'pin-cancel': return go({ name: 'cart' });
-    case 'pin-ok':
-      if (s.name === 'pin' && s.digits === 4) placeOrder();
-      return;
+    case 'pin-ok': if (s.name === 'pin' && s.digits === 4) void placeOrder(); return;
   }
 });
 
 // Hidden reset for demos: long-press the logo for 1.5 s.
 let pressTimer: number | undefined;
 app.addEventListener('pointerdown', (e) => {
-  if ((e.target as HTMLElement).closest('[data-logo]')) pressTimer = window.setTimeout(restart, 1500);
+  if (!placing && (e.target as HTMLElement).closest('[data-logo]')) pressTimer = window.setTimeout(restart, 1500);
 });
 app.addEventListener('pointerup', () => window.clearTimeout(pressTimer));
 app.addEventListener('pointercancel', () => window.clearTimeout(pressTimer));

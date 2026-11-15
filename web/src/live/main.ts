@@ -1,61 +1,51 @@
-// Projector board for the demo: what Warmer is doing right now, and orders landing from the kiosk.
-// Polls Convex once a second over plain HTTP (no extra npm package).
-import { convexQuery } from '../kiosk/convexHttp';
+import { ConvexClient } from 'convex/browser';
+import { anyApi } from 'convex/server';
 
 type Order = { _id: string; number: number; items: { name: string; price: number }[]; total: number; createdAt: number };
-type Session = { _id: string; goal: string; history: string[]; status: string; createdAt: number };
 
-const app = document.getElementById('app')!;
-const seen = new Set<string>();
-let first = true;
+const list = document.getElementById('orders')!;
+const status = document.getElementById('status')!;
+const money = (n: number) => '$' + n.toFixed(2);
+const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
-const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
-const STATUS: Record<string, string> = {
-  planning: 'Reading the screen…',
-  guiding: 'Guiding the finger…',
-  done: 'Done ✓',
-  error: 'Retrying…',
-};
-
-async function refresh() {
-  let orders: Order[] = [];
-  let sessions: Session[] = [];
-  try {
-    [orders, sessions] = await Promise.all([
-      convexQuery<Order[]>('orders:recent'),
-      convexQuery<Session[]>('sessions:recent'),
-    ]);
-  } catch (err) {
-    console.warn('live refresh failed', err);
-    return;
-  }
-
-  const s = sessions[0];
-  const sessionHtml = s
-    ? `<div class="goal">“${esc(s.goal)}”</div>
-       <div class="status">${esc(STATUS[s.status] ?? s.status)}</div>
-       <ul class="steps">${s.history.slice(-6).map((h) => `<li>${esc(h)}</li>`).join('')}</ul>`
-    : `<div class="empty">Waiting for someone to say what they want…</div>`;
-
-  const ordersHtml = orders.length
-    ? orders
-        .map((o) => {
-          const isNew = !first && !seen.has(o._id);
-          seen.add(o._id);
-          return `<div class="order ${isNew ? 'new' : ''}">
-            <div class="num">#${o.number}</div>
-            <div class="items">${o.items.map((i) => esc(i.name)).join(' · ')}</div>
-            <div class="total">$${o.total.toFixed(2)}</div>
-          </div>`;
-        })
-        .join('')
-    : `<div class="empty">No orders yet.</div>`;
-  first = false;
-
-  app.innerHTML = `
-    <section class="panel"><h1>Warmer is guiding</h1>${sessionHtml}</section>
-    <section class="panel"><h1>Orders from the kiosk</h1>${ordersHtml}</section>`;
+function itemSummary(items: Order['items']): string {
+  const counts = new Map<string, number>();
+  for (const { name } of items) counts.set(name, (counts.get(name) ?? 0) + 1);
+  return [...counts].map(([name, n]) => (n > 1 ? `${n}× ${name}` : name)).join(', ');
 }
 
-refresh();
-setInterval(refresh, 1000);
+let seen: Set<string> | null = null;
+
+function render(orders: Order[]) {
+  status.textContent = 'Live';
+  status.classList.add('live');
+  if (!orders.length) {
+    list.innerHTML = '<div class="empty">Waiting for the first order…</div>';
+    seen = new Set();
+    return;
+  }
+  list.innerHTML = orders
+    .map((o) => {
+      const isNew = seen !== null && !seen.has(o._id);
+      return `<div class="order${isNew ? ' new' : ''}">
+        <div class="num">#${o.number}</div>
+        <div class="items">${esc(itemSummary(o.items))}</div>
+        <div class="total">${money(o.total)}</div>
+      </div>`;
+    })
+    .join('');
+  seen = new Set(orders.map((o) => o._id));
+}
+
+const url = import.meta.env.VITE_CONVEX_URL;
+if (!url) {
+  status.textContent = 'Not configured';
+  list.innerHTML = '<div class="empty">VITE_CONVEX_URL is not set.</div>';
+} else {
+  const client = new ConvexClient(url);
+  client.onUpdate(anyApi.orders.recent, {}, (orders: Order[]) => render(orders), (err) => {
+    status.textContent = 'Reconnecting…';
+    status.classList.remove('live');
+    console.error(err);
+  });
+}
