@@ -49,6 +49,8 @@ export class Flow {
   private changedWhilePlanning = false;
   private tapTimer: ReturnType<typeof setTimeout> | null = null;
   private reached = false;
+  private steadyAnchor: Point | null = null;
+  private steadySince = 0;
   private pressWatch: ReturnType<typeof setInterval> | null = null;
   private frameHash = ''; // camera hash of the screen we're guiding on (hand excluded) // finger got onto (or right next to) the current button at least once
   private screenRegion: Box | null = null; // where the kiosk screen is in the camera frame (from the AI)
@@ -132,21 +134,33 @@ export class Flow {
   private watchForTap() {
     const box = this.target?.box;
     const active = (this.state === 'guiding' || this.state === 'pin') && !!box && !this.planning;
-    if (!active) return this.clearTapTimer();
-    // Anywhere on the button (plus a little margin) counts as reaching it. Handheld tracking is noisy,
-    // so don't require the exact "Tap" zone before we start watching for the tap.
-    const onButton = !!this.finger && inBox(this.finger, grow(box!, 0.03));
-    if (onButton || this.loop.wasOn) this.reached = true;
-    if (!this.reached) return;
-    if (onButton) return this.clearTapTimer();
-    if (this.tapTimer) return;
-    this.tapTimer = setTimeout(() => {
-      this.tapTimer = null;
-      if (this.reached && !this.planning) this.onScreenChanged();
-    }, 600);
+    if (!active || !this.finger) return this.resetSteady();
+    // A tap only counts when the fingertip is held steady ON the button for a full second.
+    // Passing over the button, overshooting, or wiggling away never counts.
+    const onButton = inBox(this.finger, grow(box!, 0.03));
+    if (!onButton) return this.resetSteady();
+    this.reached = true;
+    const now = Date.now();
+    const a = this.steadyAnchor;
+    if (!a || Math.hypot(this.finger.x - a.x, this.finger.y - a.y) > STEADY_RADIUS) {
+      this.steadyAnchor = { ...this.finger };
+      this.steadySince = now;
+      return;
+    }
+    if (now - this.steadySince >= STEADY_MS) {
+      this.resetSteady();
+      this.onScreenChanged();
+    }
   }
 
+  private resetSteady() {
+    this.steadyAnchor = null;
+    this.steadySince = 0;
+  }
+
+
   private clearTapTimer() {
+    this.resetSteady();
     if (this.tapTimer) clearTimeout(this.tapTimer);
     this.tapTimer = null;
     if (this.pressWatch) clearInterval(this.pressWatch);
@@ -250,30 +264,25 @@ export class Flow {
 
   private onFingerOnTarget() {
     if (this.state !== 'guiding') return;
-    say('Press.');
+    say('Press and hold.');
     this.watchAfterPress();
   }
 
   /**
    * After "Press", Warmer is silent until it knows the tap happened. Three ways to know, so it can
    * never get stuck in silence:
-   *  1. the finger leaves the button (watchForTap),
-   *  2. the finger rests on the button for ~1.5 s (people tap and keep their finger there),
-   *  3. the camera picture of the screen clearly changed (checked every ~1.5 s).
+   *  1. the finger is held steady on the button for 1 s (watchForTap),
+   *  2. the camera picture of the screen clearly changed (checked every ~1.5 s).
    * And if none of that happens for 8 s, it reminds them out loud.
    */
   private watchAfterPress() {
     if (this.pressWatch) clearInterval(this.pressWatch);
-    let restingTicks = 0;
     let tick = 0;
     let remindedAt = Date.now();
     this.pressWatch = setInterval(() => {
       const box = this.target?.box;
       if (this.state !== 'guiding' || this.planning || !box) return this.clearTapTimer();
       tick++;
-      const onButton = !!this.finger && inBox(this.finger, grow(box, 0.03));
-      restingTicks = onButton ? restingTicks + 1 : 0;
-      if (restingTicks >= 2) return this.onScreenChanged();
       if (tick % 2 === 0 && this.frameHash) {
         this.eyes
           .captureFrame(2000)
@@ -286,7 +295,7 @@ export class Flow {
       }
       if (Date.now() - remindedAt > 8000 && !isSpeaking()) {
         remindedAt = Date.now();
-        say('Press the button, then lift your finger.');
+        say('Press and hold the button.');
       }
     }, 750);
   }
@@ -443,6 +452,9 @@ function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
     );
   });
 }
+
+const STEADY_MS = 1000; // finger held still on the button this long = tap
+const STEADY_RADIUS = 0.03; // "still" = stays within 3% of the camera frame
 
 /** Differing bits between two hex hashes (0 if they can't be compared). */
 function hamming(a: string, b: string): number {
