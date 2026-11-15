@@ -1,5 +1,6 @@
 // Haptics, sounds and speech. All the "output" of Warmer lives here.
 import * as Haptics from 'expo-haptics';
+import { Vibration } from 'react-native';
 import * as Speech from 'expo-speech';
 import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from 'expo-audio';
 import { guide, type Box, type Point } from './guidance';
@@ -39,7 +40,14 @@ function play(p: AudioPlayer | null | undefined, volume = 1) {
 
 export function playDing() {
   play(ding);
+  // The full vibration motor (phone-call buzz) is far stronger than haptic taps when held in a hand.
+  Vibration.vibrate();
   Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+}
+
+/** A burst of `n` heavy taps, 30 ms apart: feels much stronger than a single tap. */
+function burst(style: Haptics.ImpactFeedbackStyle, n: number) {
+  for (let i = 0; i < n; i++) setTimeout(() => Haptics.impactAsync(style), i * 30);
 }
 
 // ---------- speech: a queue, so a sentence is never cut off ----------
@@ -85,14 +93,16 @@ export function clearSpeechQueue() {
 // Concentric rings around the button. Bigger ring = gentle and slow; smaller = stronger and faster,
 // until it's almost violent right at the edge of the button. Each ring has one fixed rhythm, so the
 // change is easy to feel as you cross into the next ring.
-type Ring = { maxDist: number; pulseMs: number; style: Haptics.ImpactFeedbackStyle; double: boolean };
+// Strength is turned way up: haptic taps alone are too weak to feel in a hand, so every ring uses
+// bursts of heavy taps, and the two innermost rings add the full vibration motor.
+type Ring = { maxDist: number; pulseMs: number; style: Haptics.ImpactFeedbackStyle; taps: number; motor: boolean };
 const RINGS: Ring[] = [
-  { maxDist: 0.05, pulseMs: 55, style: Haptics.ImpactFeedbackStyle.Heavy, double: true },
-  { maxDist: 0.1, pulseMs: 110, style: Haptics.ImpactFeedbackStyle.Heavy, double: false },
-  { maxDist: 0.17, pulseMs: 200, style: Haptics.ImpactFeedbackStyle.Medium, double: false },
-  { maxDist: 0.26, pulseMs: 330, style: Haptics.ImpactFeedbackStyle.Medium, double: false },
-  { maxDist: 0.38, pulseMs: 500, style: Haptics.ImpactFeedbackStyle.Light, double: false },
-  { maxDist: Infinity, pulseMs: 750, style: Haptics.ImpactFeedbackStyle.Light, double: false },
+  { maxDist: 0.05, pulseMs: 420, style: Haptics.ImpactFeedbackStyle.Heavy, taps: 4, motor: true }, // almost violent
+  { maxDist: 0.1, pulseMs: 450, style: Haptics.ImpactFeedbackStyle.Heavy, taps: 3, motor: true },
+  { maxDist: 0.17, pulseMs: 220, style: Haptics.ImpactFeedbackStyle.Heavy, taps: 3, motor: false },
+  { maxDist: 0.26, pulseMs: 340, style: Haptics.ImpactFeedbackStyle.Heavy, taps: 2, motor: false },
+  { maxDist: 0.38, pulseMs: 500, style: Haptics.ImpactFeedbackStyle.Heavy, taps: 1, motor: false },
+  { maxDist: Infinity, pulseMs: 750, style: Haptics.ImpactFeedbackStyle.Medium, taps: 1, motor: false },
 ];
 function ringFor(distance: number): number {
   return RINGS.findIndex((r) => distance <= r.maxDist);
@@ -180,8 +190,9 @@ export class GuideLoop {
     this.onSince = 0;
 
     const ring = RINGS[ringFor(g.distance)];
-    Haptics.impactAsync(ring.style);
-    if (ring.double) setTimeout(() => Haptics.impactAsync(ring.style), 25);
+    // The motor buzz lasts ~0.4 s on iPhone, so the inner rings pulse at that rate with taps on top.
+    if (ring.motor) Vibration.vibrate();
+    burst(ring.style, ring.taps);
     if (this.sound && !isSpeaking()) {
       const closeness = 1 - Math.min(1, g.distance / 0.55);
       play(beeps[Math.round(closeness * (beeps.length - 1))], 0.45);

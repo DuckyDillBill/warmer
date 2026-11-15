@@ -35,6 +35,7 @@ let landmarker: HandLandmarker | null = null;
 const watcher = new ScreenWatcher();
 const tracker = new ShiftTracker(); // keeps the box on its button when the phone moves
 const refiner = new BoxRefiner(); // snaps the AI's rough box to the button's real edges
+const refineOn = params.get('refine') !== '0'; // ?refine=0 turns snapping off for comparison
 const hover = new HoverCorrector(); // fixes the offset when the finger hovers off the screen
 hover.enabled = params.get('hover') !== '0'; // ?hover=0 turns the correction off for comparison
 let handBox: Box | null = null;
@@ -68,7 +69,7 @@ function receive(msg: InMsg) {
     case 'setTarget':
       // Snap to the button's real edges first. lastMovedSent stays the app's box, so if snapping
       // changed it, the loop below immediately tells the app the corrected box.
-      target = msg.box ? refiner.refine(msg.box, video) : null;
+      target = msg.box ? (refineOn ? refiner.refine(msg.box, video) : msg.box) : null;
       if (target) tracker.reset(video);
       else tracker.clear();
       lastMovedSent = msg.box;
@@ -128,13 +129,12 @@ const captureCanvas = document.createElement('canvas');
 function captureJpeg(): string {
   const w = video.videoWidth;
   const h = video.videoHeight;
-  // 768 px wide: Gemini reads it as fewer image tiles, so it uploads and answers faster.
-  // Kiosk buttons are big; this is plenty of detail.
-  const scale = Math.min(1, 768 / w);
+  // 1024 px wide: sharper image = more accurate button boxes (we tried 768 for speed; boxes drifted).
+  const scale = Math.min(1, 1024 / w);
   captureCanvas.width = Math.round(w * scale);
   captureCanvas.height = Math.round(h * scale);
   captureCanvas.getContext('2d')!.drawImage(video, 0, 0, captureCanvas.width, captureCanvas.height);
-  return captureCanvas.toDataURL('image/jpeg', 0.7).split(',')[1];
+  return captureCanvas.toDataURL('image/jpeg', 0.8).split(',')[1];
 }
 
 // ---------- drawing ----------

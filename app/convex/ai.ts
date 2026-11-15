@@ -20,7 +20,7 @@ const PER_MODEL_TIMEOUT_MS = 12000;
 const HASH_MATCH_BITS = 6; // mapScreen: screens within this many differing bits count as "the same screen"
 const READ_MATCH_BITS = 2; // readAndPlan: stricter (kiosk screens share a layout, so 8x8 hashes look alike)
 
-async function callModel(parts: unknown[], model: string, key: string): Promise<any> {
+async function callModel(parts: unknown[], model: string, key: string, thinking: 'minimal' | 'low'): Promise<any> {
   const started = Date.now();
   const send = async (minimalThinking: boolean) => {
     const ctrl = new AbortController();
@@ -37,7 +37,11 @@ async function callModel(parts: unknown[], model: string, key: string): Promise<
             temperature: 0,
             // Gemini 3.x uses thinkingLevel; 2.5 uses thinkingBudget (0 = off).
             ...(minimalThinking
-              ? { thinkingConfig: model.startsWith('gemini-2.5') ? { thinkingBudget: 0 } : { thinkingLevel: 'minimal' } }
+              ? {
+                  thinkingConfig: model.startsWith('gemini-2.5')
+                    ? { thinkingBudget: thinking === 'low' ? 512 : 0 }
+                    : { thinkingLevel: thinking },
+                }
               : {}),
           },
         }),
@@ -55,13 +59,15 @@ async function callModel(parts: unknown[], model: string, key: string): Promise<
   return JSON.parse(text.replace(/^```(json)?|```$/g, '').trim());
 }
 
-async function gemini(parts: unknown[], models: string[]): Promise<any> {
+// Reading the screen (boxes) gets a little thinking: placement accuracy matters more than a second.
+// Picking the next button from a text list stays at minimal thinking.
+async function gemini(parts: unknown[], models: string[], thinking: 'minimal' | 'low' = 'minimal'): Promise<any> {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error('GEMINI_API_KEY is not set in the Convex dashboard (Settings → Environment Variables).');
   const errors: string[] = [];
   for (const model of models) {
     try {
-      return await callModel(parts, model, key);
+      return await callModel(parts, model, key, thinking);
     } catch (e) {
       const msg = (e as Error).name === 'AbortError' ? `${model} timed out` : (e as Error).message;
       console.warn(`gemini fallback: ${msg}`);
@@ -101,7 +107,7 @@ export const mapScreen = action({
     if (hit) return { screenId: hit._id, summary: hit.summary, buttons: hit.buttons, cached: true };
 
     // 2) New screen → ask Gemini once.
-    const out = await gemini([{ text: MAP_PROMPT }, { inline_data: { mime_type: 'image/jpeg', data: jpeg } }], VISION_MODELS());
+    const out = await gemini([{ text: MAP_PROMPT }, { inline_data: { mime_type: 'image/jpeg', data: jpeg } }], VISION_MODELS(), 'low');
     const buttons = toButtons(out);
     const summary = String(out.summary ?? 'Screen');
     const screenId = await ctx.runMutation(internal.screens.insert, { hash, summary, buttons });
@@ -250,6 +256,7 @@ export const readAndPlan = action({
     const out = await gemini(
       [{ text: READ_AND_PLAN_PROMPT(goal, history) }, { inline_data: { mime_type: 'image/jpeg', data: jpeg } }],
       VISION_MODELS(),
+      'low',
     );
     const buttons = toButtons(out);
     const screenId = await ctx.runMutation(internal.screens.insert, { hash, summary: String(out.summary ?? 'Screen'), buttons });
