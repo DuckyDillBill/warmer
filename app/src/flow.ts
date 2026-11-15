@@ -167,7 +167,14 @@ export class Flow {
     if (this.state === 'guiding') say('Tap.');
   }
 
-  private async plan(attempt = 0): Promise<void> {
+  private async plan(attempt = 0, internal = false): Promise<void> {
+    // Only one screen read at a time. Pressing the button again or a new goal while we're reading
+    // just marks the read as stale; it gets redone with the latest goal when the current one returns.
+    // (Parallel reads were burning through the Gemini rate limit.)
+    if (this.planning && !internal) {
+      this.changedWhilePlanning = true;
+      return;
+    }
     if (!this.client) {
       this.set('error', 'Backend not connected (EXPO_PUBLIC_CONVEX_URL missing).');
       say('Warmer is not connected to its backend yet.');
@@ -192,7 +199,8 @@ export class Flow {
       // Without the cap, glare or a shaky phone can keep "Reading the screen…" going for minutes.
       if (this.changedWhilePlanning && this.replans < 2) {
         this.replans++;
-        return this.plan();
+        this.planning = false;
+        return this.plan(0, true);
       }
       this.replans = 0;
 
@@ -229,7 +237,7 @@ export class Flow {
       console.warn('plan failed', e);
       if (attempt === 0) {
         await say("Sorry, let's try that again.");
-        return this.plan(1);
+        return this.plan(1, true);
       }
       this.set('error', `Couldn't read the screen: ${(e as Error).message}`);
       this.logSession('error');

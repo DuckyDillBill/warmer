@@ -10,43 +10,63 @@ declare const process: { env: Record<string, string | undefined> };
 
 type Button = { label: string; box: number[]; kind: string };
 
-// Speed matters more than depth here: thinking is turned down to the minimum on both calls.
-// Vision (reading the screen) uses Flash; picking the next button is a tiny text task, so Flash-Lite.
-// Override either with Convex env vars GEMINI_MODEL / GEMINI_STEP_MODEL.
-const VISION_MODEL = () => process.env.GEMINI_MODEL || 'gemini-3.6-flash';
-const STEP_MODEL = () => process.env.GEMINI_STEP_MODEL || 'gemini-3.5-flash-lite';
-const HASH_MATCH_BITS = 6; // screens within this many differing bits count as "the same screen"
+// Speed matters more than depth: thinking is turned down to the minimum.
+// Each model has its own rate limit and its own outages, so if one is overloaded (503),
+// out of quota (429), slow, or unavailable, we move straight on to the next one.
+// Override the first choice with Convex env vars GEMINI_MODEL / GEMINI_STEP_MODEL.
+const VISION_MODELS = () => [process.env.GEMINI_MODEL || 'gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-3.5-flash-lite'];
+const STEP_MODELS = () => [process.env.GEMINI_STEP_MODEL || 'gemini-3.5-flash-lite', 'gemini-2.5-flash-lite', 'gemini-3.6-flash'];
+const PER_MODEL_TIMEOUT_MS = 12000;
 
-async function gemini(parts: unknown[], model: string): Promise<any> {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) throw new Error('GEMINI_API_KEY is not set in the Convex dashboard (Settings → Environment Variables).');
+async function callModel(parts: unknown[], model: string, key: string): Promise<any> {
   const started = Date.now();
-  const send = (minimalThinking: boolean) =>
-    fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts }],
-        generationConfig: {
-          responseMimeType: 'application/json',
-          temperature: 0,
-          ...(minimalThinking ? { thinkingConfig: { thinkingLevel: 'minimal' } } : {}),
-        },
-      }),
-    });
+  const send = async (minimalThinking: boolean) => {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), PER_MODEL_TIMEOUT_MS);
+    try {
+      return await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+        method: 'POST',
+        signal: ctrl.signal,
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts }],
+          generationConfig: {
+            responseMimeType: 'application/json',
+            temperature: 0,
+            // Gemini 3.x uses thinkingLevel; 2.5 uses thinkingBudget (0 = off).
+            ...(minimalThinking
+              ? { thinkingConfig: model.startsWith('gemini-2.5') ? { thinkingBudget: 0 } : { thinkingLevel: 'minimal' } }
+              : {}),
+          },
+        }),
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+  };
   let res = await send(true);
-  // Some models reject 'minimal'. Retry with the model's default thinking.
-  if (!res.ok) res = await send(false);
-  // Still failing (e.g. model name not available on this key)? Fall back to the old known-good alias.
-  if (!res.ok && model !== 'gemini-flash-latest') {
-    console.warn(`gemini ${model} failed with ${res.status}: ${(await res.text()).slice(0, 200)}; falling back`);
-    return gemini(parts, 'gemini-flash-latest');
-  }
-  if (!res.ok) throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 300)}`);
-  console.log(`gemini ${model} took ${Date.now() - started}ms`);
+  if (res.status === 400) res = await send(false); // model doesn't accept that thinking setting
+  if (!res.ok) throw new Error(`${model} ${res.status}: ${(await res.text()).slice(0, 160)}`);
   const data = await res.json();
+  console.log(`gemini ${model} took ${Date.now() - started}ms`);
   const text: string = data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text ?? '').join('') ?? '';
   return JSON.parse(text.replace(/^```(json)?|```$/g, '').trim());
+}
+
+async function gemini(parts: unknown[], models: string[]): Promise<any> {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) throw new Error('GEMINI_API_KEY is not set in the Convex dashboard (Settings → Environment Variables).');
+  const errors: string[] = [];
+  for (const model of models) {
+    try {
+      return await callModel(parts, model, key);
+    } catch (e) {
+      const msg = (e as Error).name === 'AbortError' ? `${model} timed out` : (e as Error).message;
+      console.warn(`gemini fallback: ${msg}`);
+      errors.push(msg);
+    }
+  }
+  throw new Error(`All Gemini models failed. ${errors.join(' | ')}`);
 }
 
 function hamming(a: string, b: string): number {
@@ -79,7 +99,7 @@ export const mapScreen = action({
     if (hit) return { screenId: hit._id, summary: hit.summary, buttons: hit.buttons, cached: true };
 
     // 2) New screen → ask Gemini once.
-    const out = await gemini([{ text: MAP_PROMPT }, { inline_data: { mime_type: 'image/jpeg', data: jpeg } }], VISION_MODEL());
+    const out = await gemini([{ text: MAP_PROMPT }, { inline_data: { mime_type: 'image/jpeg', data: jpeg } }], VISION_MODELS());
     const buttons: Button[] = (out.buttons ?? [])
       .filter((b: any) => Array.isArray(b.box_2d) && b.box_2d.length === 4)
       .map((b: any) => {
@@ -123,7 +143,7 @@ export const nextStep = action({
   handler: async (ctx, { goal, history, screenId }): Promise<StepResult> => {
     const screen: Doc<'screens'> | null = await ctx.runQuery(internal.screens.get, { id: screenId });
     if (!screen) throw new Error('Unknown screen');
-    const out = await gemini([{ text: STEP_PROMPT(goal, history, screen.summary, screen.buttons) }], STEP_MODEL());
+    const out = await gemini([{ text: STEP_PROMPT(goal, history, screen.summary, screen.buttons) }], STEP_MODELS());
     const idx = typeof out.targetIndex === 'number' ? out.targetIndex : null;
     const b: Button | undefined = idx !== null ? screen.buttons[idx] : undefined;
     return {
@@ -144,7 +164,7 @@ export const transcribeGoal = action({
     const out = await gemini([
       { text: 'A person said what they want to do on a touchscreen (usually ordering food). Return JSON {"goal": string} with what they want, as a short phrase in their words. If nothing intelligible was said, return {"goal": ""}.' },
       { inline_data: { mime_type: mimeType ?? 'audio/mp4', data: audio } },
-    ], STEP_MODEL());
+    ], STEP_MODELS());
     return { goal: String(out.goal ?? '').trim() };
   },
 });
