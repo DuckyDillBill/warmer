@@ -1,0 +1,20 @@
+{
+  "cli": { "appVersionSource": "remote" },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": { "EXPO_PUBLIC_EYES_URL": "https://warmer-lake.vercel.app/eyes" }
+    },
+    "simulator": {
+      "developmentClient": false,
+      "ios": { "simulator": true },
+      "env": { "EXPO_PUBLIC_EYES_URL": "https://warmer-lake.vercel.app/eyes" }
+    },
+    "production": {
+      "autoIncrement": true,
+      "env": { "EXPO_PUBLIC_EYES_URL": "https://warmer-lake.vercel.app/eyes" }
+    }
+  },
+  "submit": { "production": {} }
+}
