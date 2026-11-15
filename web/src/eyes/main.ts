@@ -168,6 +168,10 @@ function draw() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, overlay.clientWidth, overlay.clientHeight);
   const r = videoRect();
+  // Draw the camera picture on the same canvas, with the same mapping as the box and fingertip.
+  // (Leaving it to the <video> element's CSS scaling made the box look offset on some phones,
+  // even though the coordinates were right.)
+  if (video.readyState >= 2) ctx.drawImage(video, r.x, r.y, r.w, r.h);
   const t = liveTarget();
   if (t) {
     const [x0, y0, x1, y1] = t;
@@ -254,6 +258,8 @@ function loop() {
 }
 
 async function boot() {
+  // The canvas shows the picture now; keep the video element playing but invisible.
+  video.style.opacity = '0';
   statusEl.style.display = debug || !inApp ? 'block' : 'none';
   try {
     await startCamera();

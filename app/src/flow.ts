@@ -4,7 +4,8 @@ import { ConvexHttpClient } from 'convex/browser';
 import { anyApi } from 'convex/server';
 import { CONVEX_URL } from './config';
 import type { Eyes } from './bridge';
-import { clearSpeechQueue, GuideLoop, say } from './feedback';
+import { clearSpeechQueue, GuideLoop, isSpeaking, say } from './feedback';
+import * as Haptics from 'expo-haptics';
 import type { Box, Point } from './guidance';
 import { inOnZone, smooth } from './guidance';
 
@@ -71,8 +72,26 @@ export class Flow {
     this.listener({ state: this.state, status: this.status, goal: this.goal, needPin: this.needPin });
   }
 
+  private heartbeat: ReturnType<typeof setInterval> | null = null;
+
   private set(state: FlowState, status?: string) {
     this.state = state;
+    // While Warmer is working (reading the screen), a soft pulse every second says "still working".
+    // Haptics only, so it never talks over anything. After ~6 s, one spoken "Still loading."
+    if (state === 'planning' && !this.heartbeat) {
+      const started = Date.now();
+      let toldStill = false;
+      this.heartbeat = setInterval(() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft);
+        if (!toldStill && Date.now() - started > 6000 && !isSpeaking()) {
+          toldStill = true;
+          say('Still loading.', { priority: 'low' });
+        }
+      }, 1000);
+    } else if (state !== 'planning' && this.heartbeat) {
+      clearInterval(this.heartbeat);
+      this.heartbeat = null;
+    }
     if (status !== undefined) this.status = status;
     this.emit();
   }
@@ -140,7 +159,7 @@ export class Flow {
     if (this.state !== 'guiding') return;
     if (this.target && (this.loop.wasOn || this.reached)) {
       // Clear confirmation so a blind user knows the tap landed and a new screen is coming.
-      say(`Got it. ${this.target.label}.`);
+      say(`Got it. ${this.target.label}. Loading.`);
       this.history.push(`Tapped "${this.target.label}"`);
     } else {
       this.history.push('The screen changed');
@@ -305,7 +324,9 @@ export class Flow {
       if (!step.target) throw new Error('no target');
       // After the first step, start with "Next:" so it's obvious this is a new screen, not the old one.
       const lead = this.history.length ? 'Next: ' : '';
-      const words = lead + [step.warning, step.say].filter(Boolean).join(' ');
+      // Always say WHERE the button is, right away: "Fries, bottom left."
+      const where = locate(step.target.box as Box, this.screenRegion);
+      const words = lead + [step.warning, `${step.target.label}, ${where}.`].filter(Boolean).join(' ');
       this.lastInstruction = words;
       this.setTarget({ label: step.target.label, box: step.target.box as Box });
       this.set('guiding', words || `Find ${step.target.label}`);
@@ -381,6 +402,17 @@ function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
 
 function inBox(p: Point, b: Box): boolean {
   return p.x >= b[0] && p.x <= b[2] && p.y >= b[1] && p.y <= b[3];
+}
+
+/** Where a button sits on the screen, in words: "top left", "middle", "bottom right"… */
+function locate(b: Box, screen: Box | null): string {
+  const [sx0, sy0, sx1, sy1] = screen ?? [0, 0, 1, 1];
+  const fx = ((b[0] + b[2]) / 2 - sx0) / (sx1 - sx0 || 1);
+  const fy = ((b[1] + b[3]) / 2 - sy0) / (sy1 - sy0 || 1);
+  const v = fy < 0.36 ? 'top' : fy > 0.64 ? 'bottom' : '';
+  const h = fx < 0.36 ? 'left' : fx > 0.64 ? 'right' : '';
+  if (!v && !h) return 'in the middle';
+  return [v, h].filter(Boolean).join(' ');
 }
 
 /** Box grown by `m` (fraction of its own size) on every side, clamped to the frame. */

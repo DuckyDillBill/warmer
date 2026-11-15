@@ -147,6 +147,7 @@ export class GuideLoop {
     if (target !== this.target) {
       this.announcedOn = false;
       this.onSince = 0;
+      this.lastHint = 0; // first direction as soon as the instruction has been said
       this.bestDist = 1;
       this.bestAt = Date.now();
     }

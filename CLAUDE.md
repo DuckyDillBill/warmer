@@ -127,7 +127,9 @@ Designed for blind users. **Quiet by design:** in testing, overlapping sounds ma
 - **Words:** every ~2 s (when nothing else is being said) a general direction: "up left", "a little down";
   "almost" when right at the button.
 - **On the button** (center 60% for 150 ms): ding + big buzz + **"Press"**, then **silence until the next screen**.
-- **After a tap:** "Got it. Fries." then the next screen's instruction starts with "Next: …".
+- **Every instruction says where the button is:** "Next: Fries, bottom left." The first direction word follows right after.
+- **After a tap:** "Got it. Fries. Loading." While reading the screen: a soft pulse every second
+  (haptics only); after ~6 s, "Still loading." Then the next instruction starts with "Next: …".
 - **No hand in view:** a soft blip every 2 s. No talking over instructions.
 - **Tap detection:** finger reached the button, then left it for 0.6 s (works handheld), or `screenChanged`.
 - **Box accuracy:** Gemini gives box + exact center point; the camera page snaps the box to the button's
