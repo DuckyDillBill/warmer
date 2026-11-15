@@ -160,7 +160,7 @@ export class Flow {
   private setTarget(t: Target | null) {
     this.target = t;
     this.loop.set(this.finger, t?.box ?? null);
-    this.eyes.setTarget(t?.box ?? null);
+    this.eyes.setTarget(t?.box ?? null, t?.label ?? '');
   }
 
   private onFingerOnTarget() {
@@ -261,7 +261,7 @@ export class Flow {
     const box = [...key.box] as Box; // fresh array so a repeated digit still resets the "on" state
     this.target = { label: 'next digit', box };
     this.loop.set(this.finger, box);
-    this.eyes.setTarget(box);
+    this.eyes.setTarget(box, 'PIN', true); // private: the projector never sees PIN entry
     this.set('pin', `Guiding to the next PIN digit (${this.pin.length} left)`);
   }
 

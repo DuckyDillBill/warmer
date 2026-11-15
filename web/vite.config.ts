@@ -9,6 +9,7 @@ export default defineConfig({
         eyes: resolve(__dirname, 'eyes.html'),
         kiosk: resolve(__dirname, 'kiosk.html'),
         live: resolve(__dirname, 'live.html'),
+        watch: resolve(__dirname, 'watch.html'),
       },
     },
   },

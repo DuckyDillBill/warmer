@@ -73,8 +73,9 @@ export class Eyes {
     });
   }
 
-  setTarget(box: Box | null) {
-    this.send({ type: 'setTarget', box });
+  /** label is shown on the projector's /watch page. private hides everything there (used for PIN entry). */
+  setTarget(box: Box | null, label = '', isPrivate = false) {
+    this.send({ type: 'setTarget', box, label, private: isPrivate });
   }
   setDebug(on: boolean) {
     this.send({ type: 'debug', on });

@@ -21,6 +21,18 @@ export default defineSchema({
     updatedAt: v.optional(v.number()),
   }),
 
+  // Spectator view (/watch): one row each, overwritten by the phone while guiding.
+  liveState: defineTable({
+    finger: v.union(v.object({ x: v.number(), y: v.number() }), v.null()),
+    target: v.union(box, v.null()),
+    label: v.string(),
+    updatedAt: v.number(),
+  }),
+  liveFrame: defineTable({
+    jpeg: v.string(), // small base64 camera snapshot, ~2 per second
+    updatedAt: v.number(),
+  }),
+
   // Orders placed on the demo kiosk, shown live on /live.
   orders: defineTable({
     items: v.array(v.object({ name: v.string(), price: v.number() })),

@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Warmer · Live</title>
+  <link rel="stylesheet" href="/src/watch/watch.css" />
+</head>
+<body>
+  <main class="stage">
+    <section class="cam">
+      <div class="camhead"><span class="dot" id="conn"></span><span id="camlabel">What Warmer sees</span></div>
+      <div class="frame" id="frame">
+        <img id="img" alt="" />
+        <canvas id="ov"></canvas>
+        <div class="offline" id="offline">Waiting for the phone…</div>
+        <div class="hidden" id="hidden">🔒 PIN entry is private</div>
+      </div>
+    </section>
+    <aside class="side">
+      <div class="brand">Warmer <span>live</span></div>
+      <div class="goal"><div class="k">They asked for</div><div class="v" id="goal">—</div></div>
+      <div class="now"><div class="k">Now finding</div><div class="v" id="label">—</div></div>
+      <div class="meter">
+        <div class="bar"><div class="fill" id="fill"></div></div>
+        <div class="heat" id="heat">No hand yet</div>
+      </div>
+      <ol class="steps" id="steps"></ol>
+      <div class="order" id="order"></div>
+    </aside>
+  </main>
+  <script type="module" src="/src/watch/main.ts"></script>
+</body>
+</html>

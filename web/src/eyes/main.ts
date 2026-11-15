@@ -3,11 +3,12 @@
 // All coordinates are normalized 0–1 of the camera frame, top-left origin (see CLAUDE.md §4).
 import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
 import { ScreenWatcher } from './screenWatcher';
+import { Broadcaster } from './broadcast';
 
 type Box = [number, number, number, number];
 type InMsg =
   | { type: 'captureFrame'; id: string }
-  | { type: 'setTarget'; box: Box | null }
+  | { type: 'setTarget'; box: Box | null; label?: string; private?: boolean }
   | { type: 'debug'; on: boolean }
   | { type: 'sensitivity'; value: 'normal' | 'high' };
 
@@ -24,9 +25,12 @@ const ctx = overlay.getContext('2d')!;
 const params = new URLSearchParams(location.search);
 let debug = params.get('debug') === '1';
 let target: Box | null = null;
+let targetLabel = '';
+let targetPrivate = false; // PIN entry: nothing is broadcast to the projector
 let fingertip: { x: number; y: number } | null = null;
 let landmarker: HandLandmarker | null = null;
 const watcher = new ScreenWatcher();
+// Broadcast to the projector's /watch page when running in the app (or with ?broadcast=1).
 
 // ---------- bridge ----------
 declare global {
@@ -36,6 +40,7 @@ declare global {
   }
 }
 const inApp = !!window.ReactNativeWebView;
+const broadcaster = new Broadcaster(inApp || params.get('broadcast') === '1' ? import.meta.env.VITE_CONVEX_URL : undefined);
 function send(msg: Record<string, unknown>) {
   if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify(msg));
   else if (debug && msg.type !== 'fingertip') console.log('[eyes →]', msg);
@@ -49,6 +54,8 @@ function receive(msg: InMsg) {
     }
     case 'setTarget':
       target = msg.box;
+      targetLabel = msg.label ?? '';
+      targetPrivate = !!msg.private;
       break;
     case 'debug':
       debug = msg.on;
@@ -188,6 +195,8 @@ function loop() {
       fingertip = null;
       watcher.setHand(null);
     }
+    if (targetPrivate) broadcaster.hide(now);
+    else broadcaster.tick(now, video, fingertip, target, targetLabel);
     const changed = watcher.update(video, now);
     if (changed) send({ type: 'screenChanged', hash: watcher.hash() });
     frames++;
