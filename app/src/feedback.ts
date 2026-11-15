@@ -145,6 +145,7 @@ export class GuideLoop {
   private bestAt = 0;
   private lastHint = 0;
   private lastNoHandBlip = 0;
+  private noHandSince = 0;
   sound = true;
 
   constructor(private onOn: () => void) {}
@@ -186,13 +187,16 @@ export class GuideLoop {
     if (!target || this.announcedOn) return 150;
 
     if (!this.finger) {
-      if (now - this.lastNoHandBlip > 2000 && !isSpeaking()) {
+      // Never leave them guessing why the directions stopped: say it, every few seconds.
+      if (!this.noHandSince) this.noHandSince = now;
+      if (now - this.noHandSince > 1500 && now - this.lastNoHandBlip > 4000 && !isSpeaking()) {
         this.lastNoHandBlip = now;
-        if (this.sound) play(noHand, 0.5);
+        say("I can't see your hand. Reach toward the screen.", { priority: 'low' });
       }
       this.onSince = 0;
       return 150;
     }
+    this.noHandSince = 0;
 
     const g = guide(this.finger, target);
     if (g.state === 'on') {
