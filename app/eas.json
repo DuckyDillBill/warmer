@@ -1,20 +1,35 @@
 {
-  "cli": { "appVersionSource": "remote" },
+  "cli": {
+    "appVersionSource": "remote"
+  },
   "build": {
     "development": {
       "developmentClient": true,
       "distribution": "internal",
-      "env": { "EXPO_PUBLIC_EYES_URL": "https://warmer-lake.vercel.app/eyes" }
+      "env": {
+        "EXPO_PUBLIC_EYES_URL": "https://warmer-lake.vercel.app/eyes",
+        "EXPO_PUBLIC_CONVEX_URL": "https://rugged-gerbil-90.convex.cloud"
+      }
     },
     "simulator": {
       "developmentClient": false,
-      "ios": { "simulator": true },
-      "env": { "EXPO_PUBLIC_EYES_URL": "https://warmer-lake.vercel.app/eyes" }
+      "ios": {
+        "simulator": true
+      },
+      "env": {
+        "EXPO_PUBLIC_EYES_URL": "https://warmer-lake.vercel.app/eyes",
+        "EXPO_PUBLIC_CONVEX_URL": "https://rugged-gerbil-90.convex.cloud"
+      }
     },
     "production": {
       "autoIncrement": true,
-      "env": { "EXPO_PUBLIC_EYES_URL": "https://warmer-lake.vercel.app/eyes" }
+      "env": {
+        "EXPO_PUBLIC_EYES_URL": "https://warmer-lake.vercel.app/eyes",
+        "EXPO_PUBLIC_CONVEX_URL": "https://rugged-gerbil-90.convex.cloud"
+      }
     }
   },
-  "submit": { "production": {} }
+  "submit": {
+    "production": {}
+  }
 }
