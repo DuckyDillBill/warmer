@@ -121,9 +121,9 @@ transcribeGoal({ audio /* base64 m4a */ }) -> { goal: string }
 Designed for blind users. **Few words, never overlapping, never stale.**
 - **Speech** (`feedback.ts` `say`): the current sentence always finishes; a new instruction
   *replaces* anything still waiting; direction words are dropped if anything else is being said.
-- **Script, one-syllable words where possible:** "Got it. Fries." → "Fries, bottom left." → direction
-  words ("up left", "slight down", "close") every ~3 s → **"Press."** → "Wait." → "Next: Add to order,
-  bottom right." → … → "Order placed. Order number 42." If a press didn't take: "Missed. Fries, bottom left."
+- **Script, all short:** "Okay. Fries." → "Fries, bottom left." → direction words ("up left",
+  "a little down", "almost") every ~3 s → **"Press."** → "Loading." → "Next: Add to order, bottom right."
+  → … → "Order placed. Order number 42." If a press didn't take: "That didn't press. Fries, bottom left."
 - **Haptic rings** (`feedback.ts` RINGS): outer = light and slow, inner = strong and fast, almost
   violent at the button. No sound effects during guidance (on iOS they can cut off speech).
 - **Press detection** (`flow.ts`): after "Press", wait until the press really happened: the screen

@@ -171,7 +171,7 @@ export class Flow {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft);
         if (!toldStill && Date.now() - started > 6000 && !isSpeaking()) {
           toldStill = true;
-          say('Wait.', { priority: 'low' });
+          say('Still loading.', { priority: 'low' });
         }
       }, 1000);
     } else if (state !== 'planning' && this.heartbeat) {
@@ -276,7 +276,7 @@ export class Flow {
     if (!this.target) return;
     this.clearTapTimer();
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    say('Wait.');
+    say('Loading.');
     this.history.push(`Tapped "${this.target.label}"`);
     this.pendingTapLabel = this.target.label;
     this.setTarget(null);
@@ -305,7 +305,7 @@ export class Flow {
       .then((id: string) => (this.sessionId = id))
       .catch((e: Error) => console.warn('session start failed', e));
     this.set('planning', `Goal: ${goal}`);
-    say(`Got it. ${goal}.`); // speak while we read the screen, don't wait for it
+    say(`Okay. ${goal}.`); // speak while we read the screen, don't wait for it
     this.plan();
   }
 
@@ -391,7 +391,7 @@ export class Flow {
       }
       if (!reminded && Date.now() - started > 10000 && !isSpeaking()) {
         reminded = true;
-        say('Press.');
+        say('Press the button.');
       }
     }, 500);
   }
@@ -522,7 +522,7 @@ export class Flow {
       if (!step.target) throw new Error('no target');
       // Short and always the same shape: "Next: Fries, bottom left." / "Press again. Fries, bottom left."
       const where = locate(step.target.box as Box, this.screenRegion);
-      const lead = missed ? 'Missed. ' : this.history.length ? 'Next: ' : '';
+      const lead = missed ? "That didn't press. " : this.history.length ? 'Next: ' : '';
       const words = lead + [missed ? null : step.warning, `${step.target.label}, ${where}.`].filter(Boolean).join(' ');
       this.lastInstruction = words;
       this.setTarget({ label: step.target.label, box: step.target.box as Box });
@@ -622,7 +622,7 @@ function locate(b: Box, screen: Box | null): string {
   const fy = ((b[1] + b[3]) / 2 - sy0) / (sy1 - sy0 || 1);
   const v = fy < 0.36 ? 'top' : fy > 0.64 ? 'bottom' : '';
   const h = fx < 0.36 ? 'left' : fx > 0.64 ? 'right' : '';
-  if (!v && !h) return 'mid';
+  if (!v && !h) return 'in the middle';
   return [v, h].filter(Boolean).join(' ');
 }
 
