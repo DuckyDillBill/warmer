@@ -137,7 +137,7 @@ const HINT_EVERY_MS = 3000; // spoken direction cadence while searching (only wh
  * The guidance loop, designed for blind users (see CLAUDE.md §6). Quiet by design:
  * - Searching: haptic rings (above). A soft beep rides along with each pulse, but only while
  *   nothing is being said, so sounds never pile on top of speech.
- * - Words: every ~2 s a general direction ("up left", "a little down"), "almost" when right there.
+ * - Words (one syllable where possible): "up left", "slight down", "close" when right there.
  * - On the button: ding + big buzz + "Press", then SILENCE until the next screen.
  * - Hand not in view: a soft blip now and then. No talking over instructions.
  * onOn fires once per target, when the fingertip first settles on the button.
@@ -200,7 +200,7 @@ export class GuideLoop {
       if (!this.noHandSince) this.noHandSince = now;
       if (now - this.noHandSince > 2000 && now - this.lastNoHandBlip > 8000 && !isSpeaking()) {
         this.lastNoHandBlip = now;
-        say("I can't see your finger.", { priority: 'low' });
+        say('No hand.', { priority: 'low' });
       }
       this.onSince = 0;
       return 150;
@@ -232,7 +232,7 @@ export class GuideLoop {
     // When they're right at the button but not quite on it, a calm "almost".
     if (now - this.lastHint > HINT_EVERY_MS && !isSpeaking()) {
       this.lastHint = now;
-      const word = g.distance < 0.05 ? 'almost' : direction(this.finger, target, g.distance);
+      const word = g.distance < 0.05 ? 'close' : direction(this.finger, target, g.distance);
       say(word, { rate: 1.15, priority: 'low' });
     }
     return ring.pulseMs;
@@ -254,5 +254,5 @@ function direction(p: Point, b: Box, distance: number): string {
   const vertical = ay >= ax * 0.5 ? (dy > 0 ? 'down' : 'up') : '';
   const horizontal = ax >= ay * 0.5 ? (dx > 0 ? 'right' : 'left') : '';
   const word = [vertical, horizontal].filter(Boolean).join(' ');
-  return distance < 0.12 ? `a little ${word}` : word;
+  return distance < 0.12 ? `slight ${word}` : word;
 }

@@ -52,7 +52,8 @@ export class Flow {
   private steadyAnchor: Point | null = null;
   private steadySince = 0;
   private leftAt = 0;
-  private pendingTapLabel = ''; // label of the button just pressed, until the next screen is confirmed // when the finger left the button after reaching it
+  private pendingTapLabel = '';
+  private verifying = false; // a quiet "did the screen already change?" check is in flight
   private screenSummary = ''; // what the AI said the current screen is
   private pressWatch: ReturnType<typeof setInterval> | null = null;
   private frameHash = ''; // camera hash of the screen we're guiding on (hand excluded) // finger got onto (or right next to) the current button at least once
@@ -170,7 +171,7 @@ export class Flow {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft);
         if (!toldStill && Date.now() - started > 6000 && !isSpeaking()) {
           toldStill = true;
-          say('Still loading.', { priority: 'low' });
+          say('Wait.', { priority: 'low' });
         }
       }, 1000);
     } else if (state !== 'planning' && this.heartbeat) {
@@ -218,6 +219,7 @@ export class Flow {
     if (!active) return this.resetSteady();
     const onButton = !!this.finger && inBox(this.finger, grow(box!, 0.03));
     if (onButton) {
+      if (!this.reached && this.state === 'guiding' && !this.pressWatch) this.watchAfterPress();
       this.reached = true;
       this.leftAt = 0;
     } else if (this.reached && !this.leftAt) {
@@ -274,7 +276,7 @@ export class Flow {
     if (!this.target) return;
     this.clearTapTimer();
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    say('Loading.');
+    say('Wait.');
     this.history.push(`Tapped "${this.target.label}"`);
     this.pendingTapLabel = this.target.label;
     this.setTarget(null);
@@ -303,7 +305,7 @@ export class Flow {
       .then((id: string) => (this.sessionId = id))
       .catch((e: Error) => console.warn('session start failed', e));
     this.set('planning', `Goal: ${goal}`);
-    say(`Okay. ${goal}.`); // speak while we read the screen, don't wait for it
+    say(`Got it. ${goal}.`); // speak while we read the screen, don't wait for it
     this.plan();
   }
 
@@ -352,7 +354,7 @@ export class Flow {
   private onFingerOnTarget() {
     if (this.state !== 'guiding') return;
     say('Press.');
-    this.watchAfterPress();
+    if (!this.pressWatch) this.watchAfterPress();
   }
 
   /**
@@ -366,6 +368,7 @@ export class Flow {
     let changedTicks = 0;
     let reminded = false;
     const started = Date.now();
+    let lastCheck = Date.now() - 1000; // first check ~3 s in
     this.pressWatch = setInterval(() => {
       const box = this.target?.box;
       if (this.state !== 'guiding' || this.planning || !box) return this.clearTapTimer();
@@ -380,11 +383,52 @@ export class Flow {
           })
           .catch(() => {});
       }
+      // Didn't notice a press? Every ~4 s, quietly ask the AI whether the screen already moved on,
+      // so we never sit waiting for a button that isn't there anymore.
+      if (!this.partner && Date.now() - lastCheck > 4000) {
+        lastCheck = Date.now();
+        this.verifyPress();
+      }
       if (!reminded && Date.now() - started > 10000 && !isSpeaking()) {
         reminded = true;
-        say('Press the button.');
+        say('Press.');
       }
     }, 500);
+  }
+
+  /**
+   * Quiet check while waiting for a press: has the screen already changed (a press we didn't see)?
+   * Same screen: say nothing, keep waiting. New screen: carry on exactly as if we'd seen the press.
+   */
+  private async verifyPress() {
+    if (this.verifying || this.planning || !this.client || !this.target || !this.screenSummary) return;
+    this.verifying = true;
+    const label = this.target.label;
+    try {
+      const crop = this.screenRegion ? padBox(this.screenRegion, 0.12) : undefined;
+      const frame = await this.eyes.captureFrame(4000, crop);
+      const step = await withTimeout(
+        this.client.action(api.ai.readAndPlan, {
+          ...frame,
+          goal: this.goal,
+          history: [...this.history, `Tapped "${label}"`],
+          ...(crop ? { crop } : {}),
+          previousSummary: this.screenSummary,
+        }),
+        15000,
+        'checking the screen',
+      );
+      // Only act if nothing else happened meanwhile, and the AI is sure the screen moved on.
+      if (this.state !== 'guiding' || this.planning || this.target?.label !== label) return;
+      if (!step.sameScreen && step.summary && step.summary !== this.screenSummary) {
+        this.reached = true;
+        this.confirmTap();
+      }
+    } catch (e) {
+      console.warn('verify failed', e);
+    } finally {
+      this.verifying = false;
+    }
   }
 
   private async plan(attempt = 0, internal = false): Promise<void> {
@@ -478,7 +522,7 @@ export class Flow {
       if (!step.target) throw new Error('no target');
       // Short and always the same shape: "Next: Fries, bottom left." / "Press again. Fries, bottom left."
       const where = locate(step.target.box as Box, this.screenRegion);
-      const lead = missed ? "That didn't press. " : this.history.length ? 'Next: ' : '';
+      const lead = missed ? 'Missed. ' : this.history.length ? 'Next: ' : '';
       const words = lead + [missed ? null : step.warning, `${step.target.label}, ${where}.`].filter(Boolean).join(' ');
       this.lastInstruction = words;
       this.setTarget({ label: step.target.label, box: step.target.box as Box });
@@ -578,7 +622,7 @@ function locate(b: Box, screen: Box | null): string {
   const fy = ((b[1] + b[3]) / 2 - sy0) / (sy1 - sy0 || 1);
   const v = fy < 0.36 ? 'top' : fy > 0.64 ? 'bottom' : '';
   const h = fx < 0.36 ? 'left' : fx > 0.64 ? 'right' : '';
-  if (!v && !h) return 'in the middle';
+  if (!v && !h) return 'mid';
   return [v, h].filter(Boolean).join(' ');
 }
 

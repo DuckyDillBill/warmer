@@ -121,15 +121,17 @@ transcribeGoal({ audio /* base64 m4a */ }) -> { goal: string }
 Designed for blind users. **Few words, never overlapping, never stale.**
 - **Speech** (`feedback.ts` `say`): the current sentence always finishes; a new instruction
   *replaces* anything still waiting; direction words are dropped if anything else is being said.
-- **Script, all short:** "Okay. Fries." → "Fries, bottom left." → direction words ("up left",
-  "a little down", "almost") every ~3 s → **"Press."** → "Loading." → "Next: Add to order, bottom right."
-  → … → "Order placed. Order number 42." If a press didn't take: "That didn't press. Fries, bottom left."
+- **Script, one-syllable words where possible:** "Got it. Fries." → "Fries, bottom left." → direction
+  words ("up left", "slight down", "close") every ~3 s → **"Press."** → "Wait." → "Next: Add to order,
+  bottom right." → … → "Order placed. Order number 42." If a press didn't take: "Missed. Fries, bottom left."
 - **Haptic rings** (`feedback.ts` RINGS): outer = light and slow, inner = strong and fast, almost
   violent at the button. No sound effects during guidance (on iOS they can cut off speech).
 - **Press detection** (`flow.ts`): after "Press", wait until the press really happened: the screen
   picture changes (twice in a row), or the finger reached the button then lifted for ~0.8 s.
   Kiosks act on lift, so we wait 0.5 s, then read. The AI is told the previous screen and reports
   `sameScreen` if the press didn't take. PIN digits: a steady 1 s hold counts.
+  If no press is noticed, every ~4 s a quiet AI check asks whether the screen already moved on;
+  if it did, Warmer carries on (never waits for a button that's gone).
 - **Always a fresh read** of the screen (no screen cache on the live path: cached boxes were from
   where the phone used to be, and kiosk screens look alike).
 - **Finger:** best = a small **blue or pink sticker on the fingernail** (`eyes/marker.ts`), found every
