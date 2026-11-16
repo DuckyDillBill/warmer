@@ -39,3 +39,15 @@ eas build -p ios --profile production && eas submit -p ios   # TestFlight
 - `web/` – Vite site on Vercel: `kiosk.html` (fake kiosk), `eyes.html` (camera + MediaPipe hand tracking, runs inside the app's WebView)
 - `app/` – Expo app: `App.tsx` UI, `src/flow.ts` key loop, `src/guidance.ts` feel, `src/feedback.ts` haptics/sound/speech, `src/bridge.ts` WebView bridge
 - `app/convex/` – backend: `ai.ts` (mapScreen, nextStep, transcribeGoal via Gemini), `screens.ts` (shared screen memory), `orders.ts` (kiosk orders for the live board)
+
+## Built with
+
+- **Capy** – coding agents ran in parallel on this repo and opened PRs we reviewed and merged:
+  [#1 live order board + kiosk orders via Convex](https://github.com/DuckyDillBill/warmer/pull/1),
+  [#2 test screens: payment terminal, microwave, airport check-in](https://github.com/DuckyDillBill/warmer/pull/2).
+- **Convex** – the whole backend (`app/convex/`): AI actions that read the screen and plan the next step,
+  sessions, kiosk orders, the live projector view, and remote demo reset. Phone, kiosk and projector stay in sync in real time.
+- **Revyl** – natural-language tests on the iOS simulator build. See [`tests/revyl/`](tests/revyl/README.md).
+- **Gemini** reads the screen; **GPT** + **Supermemory** handle the order checklist and memory ("the usual") in `app/convex/brain.ts`.
+- **MediaPipe** tracks the fingertip on the phone, about 30 times a second (`web/src/eyes/`).
+- **ElevenLabs** voiced the demo video narration.
