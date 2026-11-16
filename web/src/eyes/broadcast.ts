@@ -7,8 +7,8 @@ type Box = [number, number, number, number];
 type Point = { x: number; y: number };
 
 const STATE_MS = 100;
-const FRAME_MS = 500;
-const FRAME_W = 360;
+const FRAME_MS = 250; // ~4 fps on the TV
+const FRAME_W = 540; // sharp enough for a big screen, still small
 
 export class Broadcaster {
   private client: ConvexClient | null;
