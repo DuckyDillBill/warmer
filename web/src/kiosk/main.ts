@@ -3,41 +3,35 @@ import { anyApi } from 'convex/server';
 
 // "Bun & Done" — a fake fast-food self-order kiosk for the Warmer demo (iPad, portrait).
 // Deliberately a screen that doesn't talk: no speech, no screen-reader hints.
-type Item = { id: string; name: string; emoji: string; price: number; desc: string; meal?: boolean };
-type Category = { id: string; name: string; emoji: string; items: Item[] };
+type Item = { id: string; name: string; photo: number; price: number; cal: number; desc: string; meal?: boolean };
+type Category = { id: string; name: string; photo: number; tone: string; items: Item[] };
 type Line = { name: string; price: number };
 
+// Food photos are free Pexels images, loaded from their CDN. If one can't load, the tile keeps a
+// clean colored background, so the kiosk still looks finished offline.
 const MENU: Category[] = [
   {
-    id: 'burgers', name: 'Burgers', emoji: '🍔', items: [
-      { id: 'cheeseburger', name: 'Cheeseburger', emoji: '🍔', price: 5.49, desc: 'Beef patty, American cheese, pickles, onions.', meal: true },
-      { id: 'double', name: 'Double Stack', emoji: '🍔', price: 7.29, desc: 'Two patties, two slices of cheese, house sauce.', meal: true },
-      { id: 'chicken', name: 'Crispy Chicken', emoji: '🍗', price: 6.49, desc: 'Fried chicken breast, lettuce, mayo.', meal: true },
-      { id: 'veggie', name: 'Veggie Burger', emoji: '🥬', price: 6.19, desc: 'Plant patty, tomato, lettuce, pickles.', meal: true },
+    id: 'burgers', name: 'Burgers', photo: 1639562, tone: '#5a2a17', items: [
+      { id: 'cheeseburger', name: 'Cheeseburger', photo: 1639562, price: 5.49, cal: 540, desc: 'Flame-grilled beef, American cheese, pickles, onions, house sauce.', meal: true },
+      { id: 'double', name: 'Double Stack', photo: 3915908, price: 7.29, cal: 780, desc: 'Two beef patties, two slices of cheese, lettuce, tomato.', meal: true },
     ],
   },
   {
-    id: 'sides', name: 'Sides', emoji: '🍟', items: [
-      { id: 'fries', name: 'Fries', emoji: '🍟', price: 2.99, desc: 'Golden, salted, crispy.' },
-      { id: 'rings', name: 'Onion Rings', emoji: '🧅', price: 3.49, desc: 'Beer-battered onion rings.' },
-      { id: 'nuggets', name: 'Nuggets', emoji: '🍗', price: 4.29, desc: '6 chicken nuggets with sauce.' },
-      { id: 'salad', name: 'Side Salad', emoji: '🥗', price: 3.29, desc: 'Greens, tomato, ranch.' },
+    id: 'sides', name: 'Sides', photo: 1586942, tone: '#7a5410', items: [
+      { id: 'fries', name: 'Fries', photo: 1586942, price: 2.99, cal: 320, desc: 'Golden, crispy, lightly salted.' },
+      { id: 'large-fries', name: 'Large Fries', photo: 2235832, price: 3.79, cal: 490, desc: 'A bigger box of our golden fries.' },
     ],
   },
   {
-    id: 'drinks', name: 'Drinks', emoji: '🥤', items: [
-      { id: 'cola', name: 'Cola', emoji: '🥤', price: 1.99, desc: 'Ice cold, medium.' },
-      { id: 'lemonade', name: 'Lemonade', emoji: '🍋', price: 2.49, desc: 'Fresh squeezed.' },
-      { id: 'water', name: 'Water', emoji: '💧', price: 1.29, desc: 'Bottled water.' },
-      { id: 'shake', name: 'Milkshake', emoji: '🥛', price: 3.99, desc: 'Vanilla, chocolate or strawberry.' },
+    id: 'drinks', name: 'Drinks', photo: 4113656, tone: '#3b1d14', items: [
+      { id: 'cola', name: 'Cola', photo: 4113656, price: 1.99, cal: 210, desc: 'Ice cold, medium.' },
+      { id: 'soda', name: 'Lemon-Lime Soda', photo: 8880742, price: 1.99, cal: 190, desc: 'Crisp and bubbly, medium.' },
     ],
   },
   {
-    id: 'desserts', name: 'Desserts', emoji: '🍦', items: [
-      { id: 'cone', name: 'Ice Cream', emoji: '🍦', price: 1.79, desc: 'Soft-serve vanilla cone.' },
-      { id: 'cookie', name: 'Cookie', emoji: '🍪', price: 1.49, desc: 'Warm chocolate chip.' },
-      { id: 'pie', name: 'Apple Pie', emoji: '🥧', price: 1.99, desc: 'Hot baked apple pie.' },
-      { id: 'brownie', name: 'Brownie', emoji: '🍫', price: 2.29, desc: 'Fudge brownie.' },
+    id: 'desserts', name: 'Desserts', photo: 1294943, tone: '#6b4a3a', items: [
+      { id: 'cone', name: 'Ice Cream Cone', photo: 1294943, price: 1.79, cal: 200, desc: 'Soft-serve vanilla.' },
+      { id: 'sundae', name: 'Chocolate Sundae', photo: 5796721, price: 2.99, cal: 330, desc: 'Vanilla soft-serve, hot fudge, sprinkles.' },
     ],
   },
 ];
@@ -75,16 +69,19 @@ convex?.onUpdate(anyApi.demo.state, {}, (row: { resetAt: number } | null) => {
 const app = document.getElementById('app')!;
 const money = (n: number) => '$' + n.toFixed(2);
 const total = () => cart.reduce((s, l) => s + l.price, 0) + roundedUp;
+const photo = (id: number, w = 900) =>
+  `<img class="ph" src="https://images.pexels.com/photos/${id}/pexels-photo-${id}.jpeg?auto=compress&cs=tinysrgb&w=${w}" alt="" onerror="this.remove()">`;
 
 function go(s: KScreen) {
   screen = s;
   render();
 }
 
-function header(): string {
+function header(title = ''): string {
   const n = cart.length;
-  return `<header><div class="logo" data-logo>Bun <span>&amp;</span> Done</div>
-    <div class="cartpill">${n === 0 ? 'Your order is empty' : `${n} item${n > 1 ? 's' : ''} · ${money(total())}`}</div></header>`;
+  return `<header><div class="logo" data-logo>BUN<span>&amp;</span>DONE</div>
+    <div class="htitle">${title}</div>
+    <div class="cartpill">${n === 0 ? 'Bag empty' : `Bag · ${n} · ${money(total())}`}</div></header>`;
 }
 
 function render() {
@@ -94,44 +91,46 @@ function render() {
   switch (s.name) {
     case 'start':
       html = `<div class="start">
-        <div class="big">🍔</div>
-        <div class="title" data-logo>Bun <span>&amp;</span> Done</div>
-        <button class="cta" data-act="begin">Tap to start your order</button>
+        ${photo(1639562, 1400)}
+        <div class="shade"></div>
+        <div class="startbody">
+          <div class="title" data-logo>BUN<span>&amp;</span>DONE</div>
+          <div class="headline">Order here</div>
+          <button class="cta" data-act="begin">Touch to start</button>
+        </div>
       </div>`;
       break;
 
     case 'categories':
-      html = `${header()}<main>
-        <h1>What are you craving?</h1>
+      html = `${header('Menu')}<main>
+        <h1>What would you like?</h1>
         <div class="grid">${MENU.map((c) => `
-          <button class="tile" data-cat="${c.id}"><div class="emoji">${c.emoji}</div><div class="name">${c.name}</div></button>`).join('')}
+          <button class="tile" data-cat="${c.id}" style="--tone:${c.tone}">${photo(c.photo)}<div class="label"><div class="name">${c.name}</div></div></button>`).join('')}
         </div>
-        <div class="spacer"></div>
         <div class="bottombar">
-          <button class="btn ghost small" data-act="restart">Start over</button>
-          <button class="btn" data-act="checkout" ${cart.length ? '' : 'style="opacity:.35"'}>Checkout</button>
+          <button class="btn ghost" data-act="restart">Start over</button>
+          <button class="btn" data-act="checkout" ${cart.length ? '' : 'disabled'}>Checkout</button>
         </div>
       </main>`;
       break;
 
     case 'items':
-      html = `${header()}<main>
+      html = `${header(s.cat.name)}<main>
         <h1>${s.cat.name}</h1>
-        <div class="grid">${s.cat.items.map((it) => `
-          <button class="tile" data-item="${it.id}"><div class="emoji">${it.emoji}</div><div class="name">${it.name}</div><div class="price">${money(it.price)}</div></button>`).join('')}
+        <div class="grid one">${s.cat.items.map((it) => `
+          <button class="tile wide" data-item="${it.id}" style="--tone:${s.cat.tone}">${photo(it.photo)}<div class="label"><div class="name">${it.name}</div><div class="price">${money(it.price)} · ${it.cal} Cal</div></div></button>`).join('')}
         </div>
-        <div class="spacer"></div>
-        <div class="bottombar"><button class="btn ghost small" data-act="back-cats">Back</button></div>
+        <div class="bottombar"><button class="btn ghost" data-act="back-cats">Back to menu</button></div>
       </main>`;
       break;
 
     case 'detail':
-      html = `${header()}<main>
-        <div class="detail">
-          <div class="emoji">${s.item.emoji}</div>
+      html = `${header(s.cat.name)}<main>
+        <div class="hero" style="--tone:${s.cat.tone}">${photo(s.item.photo, 1200)}</div>
+        <div class="info">
           <div class="name">${s.item.name}</div>
           <div class="desc">${s.item.desc}</div>
-          <div class="price">${money(s.item.price)}</div>
+          <div class="meta"><span class="price">${money(s.item.price)}</span><span class="cal">${s.item.cal} Cal</span></div>
         </div>
         <div class="row">
           <button class="btn ghost" data-act="back-items">Back</button>
@@ -141,29 +140,34 @@ function render() {
       break;
 
     case 'meal':
-      html = `${header()}<main>
-        <div class="detail">
-          <div class="emoji">🍔🍟🥤</div>
-          <div class="name">Make it a meal?</div>
-          <div class="desc">Add medium fries and a drink to your ${s.item.name}.</div>
-          <div class="price">+ $3.49</div>
+      html = `${header('Make it a meal')}<main>
+        <div class="mealpics">
+          <div class="mp" style="--tone:#5a2a17">${photo(s.item.photo, 600)}</div>
+          <div class="mp" style="--tone:#7a5410">${photo(1586942, 600)}</div>
+          <div class="mp" style="--tone:#3b1d14">${photo(4113656, 600)}</div>
         </div>
-        <button class="btn" data-act="meal-yes">Yes, make it a meal</button>
-        <div class="row"><div class="spacer"></div><button class="btn ghost small" data-act="meal-no">No thanks</button></div>
+        <div class="info">
+          <div class="name">Make it a meal?</div>
+          <div class="desc">Add medium fries and a medium drink to your ${s.item.name}.</div>
+          <div class="meta"><span class="price">+ $3.49</span></div>
+        </div>
+        <div class="row">
+          <button class="btn ghost" data-act="meal-no">No thanks</button>
+          <button class="btn" data-act="meal-yes">Yes, make it a meal</button>
+        </div>
       </main>`;
       break;
 
     case 'cart':
-      html = `${header()}<main>
-        <h1>Your order</h1>
+      html = `${header('Your order')}<main>
+        <h1>Review your order</h1>
         <div class="cart">
           ${cart.map((l) => `<div class="line"><span>${l.name}</span><span>${money(l.price)}</span></div>`).join('')}
           <div class="total"><span>Total</span><span>${money(total())}</span></div>
         </div>
-        <div class="spacer"></div>
         <div class="row">
           <button class="btn ghost" data-act="back-cats">Add more</button>
-          <button class="btn" data-act="pay">Pay</button>
+          <button class="btn" data-act="pay">Pay ${money(total())}</button>
         </div>
       </main>`;
       break;
@@ -172,22 +176,15 @@ function render() {
       const t = cart.reduce((sum, l) => sum + l.price, 0);
       const r = Math.ceil(t) - t || 1;
       html = `${header()}<main>
-        <div class="detail">
-          <div class="emoji">💛</div>
-          <div class="name">Round up for charity?</div>
-          <div class="desc">Round up your total and help feed families in your community.</div>
-          <div class="price">+ ${money(r)}</div>
-        </div>
-        <button class="btn" data-act="round-yes">Round up</button>
-        <div class="row"><div class="spacer"></div><button class="btn ghost small" data-act="round-no">No thanks</button></div>
+        <div class="info"><div class="name">Round up for charity?</div><div class="meta"><span class="price">+ ${money(r)}</span></div></div>
+        <div class="row"><button class="btn ghost" data-act="round-no">No thanks</button><button class="btn" data-act="round-yes">Round up</button></div>
       </main>`;
       break;
     }
 
     case 'pin':
-      html = `${header()}<main>
+      html = `${header('Payment')}<main>
         <h1>Enter your PIN</h1>
-        <h2>Card inserted · Total ${money(total())}</h2>
         <div class="dots">${[0, 1, 2, 3].map((i) => `<div class="dot ${i < s.digits ? 'on' : ''}"></div>`).join('')}</div>
         <div class="keypad">
           ${[1, 2, 3, 4, 5, 6, 7, 8, 9].map((d) => `<button class="key" data-key="${d}">${d}</button>`).join('')}
@@ -200,10 +197,11 @@ function render() {
 
     case 'done':
       html = `<div class="done">
-        <div class="emoji" style="font-size:120px">✅</div>
-        <div class="msg">Thank you!</div>
-        <div class="num">Order #${orderNumber}</div>
-        <div class="msg">Please wait for your number.</div>
+        <div class="check">✓</div>
+        <div class="msg">Thank you</div>
+        <div class="numlabel">Your order number</div>
+        <div class="num">${orderNumber}</div>
+        <div class="sub">Please wait for your number to be called.</div>
       </div>`;
       doneTimer = window.setTimeout(() => restart(), 30000);
       break;
@@ -249,7 +247,7 @@ function publishLayout() {
       };
     })
     .filter((b) => b.rect[2] > b.rect[0] && b.rect[3] > b.rect[1]);
-  const titleEl = app.querySelector('h1, .done .num, .detail .name, .start .title') as HTMLElement | null;
+  const titleEl = app.querySelector('h1, .done .num, .info .name, .start .headline') as HTMLElement | null;
   const title = (titleEl?.innerText || screen.name).replace(/\s+/g, ' ').trim();
   const dots = screen.name === 'pin' ? ` (${(screen as { digits: number }).digits} of 4 digits entered)` : '';
   convex.mutation(anyApi.partner.publish, { screen: screen.name, title: title + dots, buttons }).catch(() => {});
