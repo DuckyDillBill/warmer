@@ -1,5 +1,5 @@
 // Sends what the phone sees to Convex so the projector's /watch page can show it live.
-// Small and throttled: fingertip + target ~10/s, a low-res camera snapshot ~2/s.
+// Small and throttled: fingertip + target ~10/s, a camera snapshot ~4/s.
 import { ConvexClient } from 'convex/browser';
 import { anyApi } from 'convex/server';
 
@@ -7,8 +7,8 @@ type Box = [number, number, number, number];
 type Point = { x: number; y: number };
 
 const STATE_MS = 100;
-const FRAME_MS = 500;
-const FRAME_W = 360;
+const FRAME_MS = 250; // ~4 fps on the TV
+const FRAME_W = 540; // sharp enough for a big screen, still small (~40 KB)
 
 export class Broadcaster {
   private client: ConvexClient | null;
