@@ -47,7 +47,8 @@ let handBox: Box | null = null;
 let lastMovedSent: Box | null = null;
 /** The target as it sits in the current frame (target + scene shift since Gemini saw it). */
 const liveTarget = (): Box | null => (target ? tracker.apply(target) : null);
-// Broadcast to the projector's /watch page when running in the app (or with ?broadcast=1).
+// Broadcast to the projector's /watch page ONLY with ?broadcast=1 (the app adds it when EXPO_PUBLIC_DEMO=1).
+// Off by default: it costs a lot of battery, and the /watch page is public, so real users' cameras must never go there.
 
 // ---------- bridge ----------
 declare global {
@@ -57,7 +58,7 @@ declare global {
   }
 }
 const inApp = !!window.ReactNativeWebView;
-const broadcaster = new Broadcaster(inApp || params.get('broadcast') === '1' ? import.meta.env.VITE_CONVEX_URL : undefined);
+const broadcaster = new Broadcaster(params.get('broadcast') === '1' ? import.meta.env.VITE_CONVEX_URL : undefined);
 function send(msg: Record<string, unknown>) {
   if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify(msg));
   else if (debug && msg.type !== 'fingertip') console.log('[eyes →]', msg);

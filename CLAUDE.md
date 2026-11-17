@@ -70,6 +70,9 @@ x to the right, y down.** Rear camera, not mirrored.
 - Boxes are `[x0, y0, x1, y1]`.
 - The phone is on a stand, so camera coordinates stay valid until the screen changes.
 - The debug overlay (fingertip dot + target box drawn on the camera view) is always on. No toggle.
+- **Battery:** the screen goes dark while an order is in progress (`app/src/screen.ts`, expo-brightness) and the
+  live /watch broadcast is off. `EXPO_PUBLIC_DEMO=1` in `app/.env.local` turns both back on for projector demos
+  (the app then loads `eyes?broadcast=1`). Never ship a store build with DEMO on.
 
 ## 5. Contracts
 

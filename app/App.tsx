@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { AppState, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { WebView as RNWebView } from 'react-native-webview';
 
@@ -20,6 +20,7 @@ import { ConvexHttpClient } from 'convex/browser';
 import { anyApi } from 'convex/server';
 import { initAudio, say } from './src/feedback';
 import { Flow, type FlowState } from './src/flow';
+import { dimScreen, restoreScreen } from './src/screen';
 import { MOCK_CAMERA, MockBackend, MockEyes } from './src/mock';
 
 const C = { bg: '#14110f', card: '#221c18', text: '#f6efe7', muted: '#b5a596', warm: '#ff9a3c', red: '#e5533d' };
@@ -42,6 +43,22 @@ export default function App() {
   const [pin, setPin] = useState('');
   const debug = true; // always show the target box and fingertip dot on the camera view
   const [camReady, setCamReady] = useState(false);
+
+  // Battery: dark screen while an order is in progress, normal brightness otherwise (and whenever the app leaves).
+  const active = state === 'planning' || state === 'guiding' || state === 'asking' || state === 'pin';
+  useEffect(() => {
+    if (active && AppState.currentState === 'active') dimScreen();
+    else restoreScreen();
+  }, [active]);
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s !== 'active') restoreScreen();
+    });
+    return () => {
+      sub.remove();
+      restoreScreen();
+    };
+  }, []);
 
   useEffect(() => {
     initAudio();
