@@ -2,7 +2,7 @@
 // goal → read screen → guide finger → tap detected → say what was tapped → read next screen → … → done
 import { ConvexClient, ConvexHttpClient } from 'convex/browser';
 import { anyApi } from 'convex/server';
-import { CONVEX_URL, USER_ID } from './config';
+import { CONVEX_URL } from './config';
 import type { Eyes } from './bridge';
 import { clearSpeechQueue, GuideLoop, isSpeaking, say } from './feedback';
 import * as Haptics from 'expo-haptics';
@@ -316,10 +316,10 @@ export class Flow {
       .then((id: string) => (this.sessionId = id))
       .catch((e: Error) => console.warn('session start failed', e));
     this.set('planning', `Goal: ${goal}`);
-    // The AI + Supermemory turn what they said into a clear order ("the usual" works). If that's slow or
+    // The AI turns what they said into a clear order. If that's slow or
     // down, we just use their own words.
     const order = this.client
-      ? await withTimeout(this.client.action(api.brain.planOrder, { said: goal, userId: USER_ID }), 9000, 'planning the order').catch(
+      ? await withTimeout(this.client.action(api.brain.planOrder, { said: goal }), 9000, 'planning the order').catch(
           (e: Error) => (console.warn('planOrder failed', e), null),
         )
       : null;
@@ -573,10 +573,6 @@ export class Flow {
         const msg = step.doneSay || 'Done.';
         this.set('done', msg);
         this.logSession('done');
-        // Supermemory: remember what they ordered and the choices they made, for "the usual" next time.
-        this.client
-          ?.action(api.brain.rememberOrder, { userId: USER_ID, said: this.said, goal: this.goal, history: this.history, place: this.screenSummary || undefined })
-          .catch((e: Error) => console.warn('rememberOrder failed', e));
         this.lastInstruction = msg;
         await say(msg);
         return;

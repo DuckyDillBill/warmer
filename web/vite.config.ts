@@ -13,6 +13,8 @@ export default defineConfig({
         terminal: resolve(__dirname, 'terminal.html'),
         microwave: resolve(__dirname, 'microwave.html'),
         checkin: resolve(__dirname, 'checkin.html'),
+        privacy: resolve(__dirname, 'privacy.html'),
+        support: resolve(__dirname, 'support.html'),
       },
     },
   },

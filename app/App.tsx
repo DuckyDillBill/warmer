@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AppState, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { AppState, Linking, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { WebView as RNWebView } from 'react-native-webview';
 
@@ -15,7 +15,8 @@ import {
 import { File } from 'expo-file-system';
 import * as Haptics from 'expo-haptics';
 import { Eyes } from './src/bridge';
-import { CONVEX_URL, EYES_URL } from './src/config';
+import { CONVEX_URL, EYES_URL, PRIVACY_URL } from './src/config';
+import { CONSENT_TEXT, hasConsent, saveConsent } from './src/consent';
 import { ConvexHttpClient } from 'convex/browser';
 import { anyApi } from 'convex/server';
 import { initAudio, say } from './src/feedback';
@@ -43,6 +44,8 @@ export default function App() {
   const [pin, setPin] = useState('');
   const debug = true; // always show the target box and fingertip dot on the camera view
   const [camReady, setCamReady] = useState(false);
+  // First launch: ask before anything goes to the AI (Apple 5.1.2(i)). The mock/simulator build skips it.
+  const [consented, setConsented] = useState(() => MOCK_CAMERA || hasConsent());
 
   // Battery: dark screen while an order is in progress, normal brightness otherwise (and whenever the app leaves).
   const active = state === 'planning' || state === 'guiding' || state === 'asking' || state === 'pin';
@@ -77,11 +80,18 @@ export default function App() {
       setStatus(s.status);
       setNeedPin(s.needPin);
     });
-    say('Warmer is ready. Hold the big button and say what you want.');
+    if (consented) say('Warmer is ready. Hold the big button and say what you want.');
+    else say(`${CONSENT_TEXT} To continue, tap I agree, at the bottom of the screen.`);
   }, []);
 
+  function agree() {
+    saveConsent();
+    setConsented(true);
+    say('Thanks. Warmer is ready. Hold the big button and say what you want.');
+  }
+
   async function startRecording() {
-    if (recording) return;
+    if (recording || !consented) return;
     const perm = await requestRecordingPermissionsAsync();
     if (!perm.granted) {
       say('Warmer needs microphone access. You can also type instead.');
@@ -184,6 +194,37 @@ export default function App() {
         </View>
       </Modal>
 
+      <Modal visible={!consented} animationType="fade">
+        <View style={s.consent}>
+          <Text style={s.consentTitle} accessibilityRole="header">Before you start</Text>
+          <Text style={s.consentText}>{CONSENT_TEXT}</Text>
+          <Pressable
+            onPress={() => Linking.openURL(PRIVACY_URL)}
+            accessibilityRole="link"
+            accessibilityLabel="Read the privacy policy"
+            style={s.consentLink}
+          >
+            <Text style={s.consentLinkText}>Read the privacy policy</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => say("Warmer can't read screens without this. Tap I agree whenever you're ready.")}
+            accessibilityRole="button"
+            accessibilityLabel="Not now"
+            style={s.consentLink}
+          >
+            <Text style={s.consentLinkText}>Not now</Text>
+          </Pressable>
+          <Pressable
+            onPress={agree}
+            accessibilityRole="button"
+            accessibilityLabel="I agree. Send screen photos and my voice to Google's Gemini AI so Warmer can work."
+            style={s.consentAgree}
+          >
+            <Text style={s.bigText}>I agree</Text>
+          </Pressable>
+        </View>
+      </Modal>
+
       <Modal visible={needPin} transparent animationType="fade">
         <View style={s.modalWrap}>
           <View style={s.modal}>
@@ -275,6 +316,12 @@ const s = StyleSheet.create({
   status: { color: C.text, fontSize: 22, fontWeight: '700', marginTop: 4 },
   big: { flex: 0.8, backgroundColor: C.warm, borderRadius: 26, alignItems: 'center', justifyContent: 'center', padding: 20 },
   bigText: { color: C.bg, fontSize: 30, fontWeight: '900', textAlign: 'center' },
+  consent: { flex: 1, backgroundColor: C.bg, paddingTop: 70, paddingBottom: 40, paddingHorizontal: 22, gap: 18 },
+  consentTitle: { color: C.text, fontSize: 32, fontWeight: '900' },
+  consentText: { color: C.text, fontSize: 22, lineHeight: 31 },
+  consentLink: { paddingVertical: 14 },
+  consentLinkText: { color: C.warm, fontSize: 20, fontWeight: '700', textDecorationLine: 'underline' },
+  consentAgree: { flex: 1, minHeight: 160, backgroundColor: C.warm, borderRadius: 26, alignItems: 'center', justifyContent: 'center' },
   row: { flexDirection: 'row', gap: 8 },
   btn: { flex: 1, backgroundColor: C.card, borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
   btnText: { color: C.text, fontSize: 16, fontWeight: '700' },

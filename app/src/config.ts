@@ -5,5 +5,6 @@ export const CONVEX_URL = process.env.EXPO_PUBLIC_CONVEX_URL ?? '';
 export const DEMO = process.env.EXPO_PUBLIC_DEMO === '1';
 const EYES_BASE = process.env.EXPO_PUBLIC_EYES_URL ?? 'https://warmer-lake.vercel.app/eyes';
 export const EYES_URL = DEMO ? `${EYES_BASE}${EYES_BASE.includes('?') ? '&' : '?'}broadcast=1` : EYES_BASE;
-// Whose memories (Supermemory namespace). No accounts in the hackathon build: one demo user per phone.
-export const USER_ID = process.env.EXPO_PUBLIC_USER_ID ?? 'demo';
+// Public pages Apple asks for (hosted with the camera page on Vercel).
+export const PRIVACY_URL = 'https://warmer-lake.vercel.app/privacy';
+export const SUPPORT_URL = 'https://warmer-lake.vercel.app/support';
