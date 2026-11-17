@@ -64,8 +64,8 @@ export class Flow {
   private lastInstruction = '';
   private pendingAsk = '';
   private askIsCart = false; // the open question is "fix the cart, or pay?"
-  private cartChecked = false; // GPT already compared the cart to the order
-  private said = ''; // what they actually said, before GPT turned it into a checklist
+  private cartChecked = false; // the AI already compared the cart to the order
+  private said = ''; // what they actually said, before the AI turned it into a checklist
   private refreshing = false; // a quiet 2-second re-read is in flight
   private guidingSince = 0; // when the current target was set
   private pin: string[] = [];
@@ -316,7 +316,7 @@ export class Flow {
       .then((id: string) => (this.sessionId = id))
       .catch((e: Error) => console.warn('session start failed', e));
     this.set('planning', `Goal: ${goal}`);
-    // GPT + Supermemory turn what they said into a clear order ("the usual" works). If that's slow or
+    // The AI + Supermemory turn what they said into a clear order ("the usual" works). If that's slow or
     // down, we just use their own words.
     const order = this.client
       ? await withTimeout(this.client.action(api.brain.planOrder, { said: goal, userId: USER_ID }), 9000, 'planning the order').catch(
@@ -344,7 +344,7 @@ export class Flow {
     }
   }
 
-  /** Their spoken (or typed) answer to our question ("Make it a meal?", "Fix it, or pay?"). GPT reads it. */
+  /** Their spoken (or typed) answer to our question ("Make it a meal?", "Fix it, or pay?"). The AI reads it. */
   private async answer(text: string) {
     const question = this.pendingAsk;
     const retryWords = this.askIsCart ? 'Say fix it, or pay.' : 'Say yes or no.';
@@ -593,7 +593,7 @@ export class Flow {
         }
         return;
       }
-      // Cart: GPT compares it to what they asked for, before they pay. A blind person can't see the cart.
+      // Cart: the AI compares it to what they asked for, before they pay. A blind person can't see the cart.
       let cartLine = '';
       if (step.cart && step.target && !missed) {
         cartLine = step.cart;

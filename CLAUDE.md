@@ -126,11 +126,11 @@ Designed for blind users. **Few words, never overlapping, never stale.**
 - **Choices are theirs:** on a meal upgrade / donation / tip screen Warmer asks a yes/no question
   ("Make it a meal with fries and a drink for $3? Hold the button and say yes or no.") and waits.
   The answer goes into the history as `They answered "yes" to "..."`. On the cart it reads items + total.
-- **Eyes, brain, memory** (`app/convex/brain.ts`): Gemini reads screens. GPT (`OPENAI_API_KEY`) turns
-  what they said + Supermemory memories into an order checklist ("the usual" works), reads their answers,
-  and checks the cart against the order before paying ("Fix it, or pay anyway?"). Supermemory
-  (`SUPERMEMORY_API_KEY`, namespace `warmer_<userId>`) stores each finished order and their choices.
-  All of it fails soft to Gemini-only. Never send PINs, passwords or card numbers there.
+- **Eyes, brain, memory** (`app/convex/brain.ts`): Gemini vision reads screens. Gemini text (the Flash-Lite
+  chain) turns what they said + Supermemory memories into an order checklist ("the usual" works), reads their
+  answers, and checks the cart against the order before paying ("Fix it, or pay anyway?"). No OpenAI.
+  Supermemory (`SUPERMEMORY_API_KEY`, namespace `warmer_<userId>`) stores each finished order and their
+  choices, and fails soft. Never send PINs, passwords or card numbers there.
 - **Haptic rings** (`feedback.ts` RINGS): outer = light and slow, close = fast hard ticking that speeds up.
   **On the button feels different:** ticking stops, one long motor buzz + ding, "Press." The motor is
   used only for "on", never for "close". No sound effects during guidance (on iOS they can cut off speech).

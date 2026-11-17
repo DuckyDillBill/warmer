@@ -1,9 +1,9 @@
 // Warmer's brain and memory.
-//   Gemini (ai.ts) = the eyes: reads each screen and finds the button.
-//   GPT (here)     = the brain: understands the person (their order, their answers) and checks the cart.
-//   Supermemory    = the memory: past orders and choices, so "the usual" works.
-// Keys live in Convex env vars (OPENAI_API_KEY, SUPERMEMORY_API_KEY), never in the app.
-// Every call here fails soft: if GPT or Supermemory is down, Warmer still works with Gemini alone.
+//   Gemini vision (ai.ts) = the eyes: reads each screen and finds the button.
+//   Gemini text (here)    = the brain: understands the person (their order, their answers) and checks the cart.
+//   Supermemory           = the memory: past orders and choices, so "the usual" works.
+// Keys live in Convex env vars (GEMINI_API_KEY, SUPERMEMORY_API_KEY), never in the app.
+// Supermemory fails soft: if it's down, Warmer still works without memory.
 // PINs, passwords and card numbers are never sent here: the PIN stays on the phone (CLAUDE.md §6).
 import { action } from './_generated/server';
 import { v } from 'convex/values';
@@ -11,50 +11,12 @@ import { gemini, STEP_MODELS } from './ai';
 
 declare const process: { env: Record<string, string | undefined> };
 
-const OPENAI_MODEL = () => process.env.OPENAI_MODEL || 'gpt-6-luna';
-const OPENAI_TIMEOUT_MS = 8000;
 const SM_URL = 'https://api.supermemory.ai';
 const SM_TIMEOUT_MS = 4000;
 
-// ---------- GPT ----------
-async function gpt(system: string, user: string): Promise<any> {
-  const key = process.env.OPENAI_API_KEY;
-  try {
-    if (!key) throw new Error('OPENAI_API_KEY not set');
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), OPENAI_TIMEOUT_MS);
-    const started = Date.now();
-    try {
-      const res = await fetch('https://api.openai.com/v1/responses', {
-        method: 'POST',
-        signal: ctrl.signal,
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-        body: JSON.stringify({
-          model: OPENAI_MODEL(),
-          instructions: system,
-          input: `${user}\n\nReply in JSON.`, // OpenAI requires the word JSON in the input itself
-          text: { format: { type: 'json_object' } },
-        }),
-      });
-      if (!res.ok) throw new Error(`openai ${res.status}: ${(await res.text()).slice(0, 160)}`);
-      const data = await res.json();
-      const text: string =
-        data.output_text ??
-        (data.output ?? [])
-          .flatMap((o: any) => o.content ?? [])
-          .filter((c: any) => c.type === 'output_text')
-          .map((c: any) => c.text)
-          .join('');
-      console.log(`gpt ${OPENAI_MODEL()} took ${Date.now() - started}ms`);
-      return JSON.parse(text.replace(/^```(json)?|```$/g, '').trim());
-    } finally {
-      clearTimeout(timer);
-    }
-  } catch (e) {
-    // GPT unavailable: same prompt on Gemini so the order still goes through.
-    console.warn(`gpt failed, using gemini: ${(e as Error).message}`);
-    return gemini([{ text: `${system}\n\n${user}` }], STEP_MODELS());
-  }
+// ---------- The brain: a short text-only Gemini call (the cheap, fast Flash-Lite chain) ----------
+async function think(system: string, user: string): Promise<any> {
+  return gemini([{ text: `${system}\n\n${user}\n\nReply in JSON.` }], STEP_MODELS());
 }
 
 // ---------- Supermemory (v5 REST: namespaces) ----------
@@ -104,7 +66,7 @@ export const planOrder = action({
   args: { said: v.string(), userId: v.optional(v.string()) },
   handler: async (_ctx, { said, userId }): Promise<{ goal: string; say: string; remembered: boolean }> => {
     const memories = await recall(userId, `${said}. Usual order, favorite items, and choices about meals, donations and tips.`);
-    const out = await gpt(
+    const out = await think(
       `You help a blind person order on a touchscreen kiosk. Turn what they said into one clear order checklist for another AI that taps through the kiosk.
 - Resolve "the usual", "same as last time", "my favorite" from their memories. Apply changes they asked for ("but with a Sprite").
 - Add a remembered choice (e.g. "skip donation", "make it a meal") ONLY if the memories show they always choose it. Never invent items.
@@ -121,7 +83,7 @@ Return JSON {"goal": string, "say": string}. "goal": the checklist, e.g. "Cheese
 export const interpretAnswer = action({
   args: { question: v.string(), heard: v.string() },
   handler: async (_ctx, { question, heard }): Promise<{ answer: string }> => {
-    const out = await gpt(
+    const out = await think(
       `A blind person was asked a question on a kiosk and answered out loud. Say what they chose, in 1 to 4 plain words (e.g. "yes", "no", "pay", "fix it", "yes, large").
 If the reply doesn't answer the question (unclear, or they asked something back), return an empty answer.
 Return JSON {"answer": string}.`,
@@ -135,7 +97,7 @@ Return JSON {"answer": string}.`,
 export const checkCart = action({
   args: { goal: v.string(), cart: v.string() },
   handler: async (_ctx, { goal, cart }): Promise<{ ok: boolean; say: string }> => {
-    const out = await gpt(
+    const out = await think(
       `A blind person can't see their cart before paying. Compare their order to the cart read from the screen.
 Extras they agreed to along the way (a meal upgrade, a donation) are fine. Flag only real problems: a missing item, a wrong item, a wrong size, a wrong quantity.
 Return JSON {"ok": boolean, "say": string}. If not ok, "say" is one short sentence naming the problem, e.g. "Your cart has a Coke, but you asked for a Sprite."`,
