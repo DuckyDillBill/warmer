@@ -15,13 +15,14 @@ import {
 import { File } from 'expo-file-system';
 import * as Haptics from 'expo-haptics';
 import { Eyes } from './src/bridge';
-import { CONVEX_URL, EYES_URL, PRIVACY_URL } from './src/config';
+import { CONVEX_URL, PRIVACY_URL, eyesUrl } from './src/config';
+import { loadDemoMode, saveDemoMode } from './src/prefs';
 import { CONSENT_TEXT, hasConsent, saveConsent } from './src/consent';
 import { ConvexHttpClient } from 'convex/browser';
 import { anyApi } from 'convex/server';
 import { initAudio, say } from './src/feedback';
 import { Flow, type FlowState } from './src/flow';
-import { dimScreen, restoreScreen } from './src/screen';
+import { dimScreen, restoreScreen, setDemoScreen } from './src/screen';
 import { MOCK_CAMERA, MockBackend, MockEyes } from './src/mock';
 
 const C = { bg: '#14110f', card: '#221c18', text: '#f6efe7', muted: '#b5a596', warm: '#ff9a3c', red: '#e5533d' };
@@ -46,6 +47,17 @@ export default function App() {
   const [camReady, setCamReady] = useState(false);
   // First launch: ask before anything goes to the AI (Apple 5.1.2(i)). The mock/simulator build skips it.
   const [consented, setConsented] = useState(() => MOCK_CAMERA || hasConsent());
+  // Demo mode (top-right toggle): the full hackathon screen + live /watch + bright screen. Off: one big button.
+  const [demo, setDemo] = useState(() => MOCK_CAMERA || loadDemoMode());
+  useEffect(() => setDemoScreen(demo), [demo]);
+  function toggleDemo() {
+    const on = !demo;
+    flow.stop(); // the camera page reloads with the new setting
+    setCamReady(false);
+    saveDemoMode(on);
+    setDemo(on);
+    say(on ? 'Demo mode on.' : 'Demo mode off.');
+  }
 
   // Battery: dark screen while an order is in progress, normal brightness otherwise (and whenever the app leaves).
   const active = state === 'planning' || state === 'guiding' || state === 'asking' || state === 'pin';
@@ -127,16 +139,31 @@ export default function App() {
   const busy = state === 'planning';
   const big = recording ? 'Listening… let go when done' : state === 'idle' || state === 'done' || state === 'error' ? 'Hold to talk' : state === 'asking' ? 'Hold to answer' : 'Hold to change order';
 
+  const demoToggle = (
+    <Pressable
+      onPress={toggleDemo}
+      accessibilityRole="switch"
+      accessibilityLabel="Demo mode"
+      accessibilityState={{ checked: demo }}
+      accessibilityHint="Shows the camera view and extra buttons for demos"
+      hitSlop={10}
+      style={[s.demoToggle, demo && { backgroundColor: C.warm }]}
+    >
+      <Text style={[s.demoToggleText, demo && { color: C.bg }]}>Demo {demo ? 'on' : 'off'}</Text>
+    </Pressable>
+  );
+
   return (
     <View style={s.root}>
       <StatusBar style="light" />
-      <View style={s.cam} accessible={false} importantForAccessibility="no-hide-descendants">
+      {/* The camera page always runs. In normal mode it sits hidden behind the big button. */}
+      <View style={demo ? s.cam : s.camHidden} accessible={false} importantForAccessibility="no-hide-descendants">
         {MOCK_CAMERA ? (
           <MockCamera eyes={eyes as unknown as MockEyes} debug={debug} />
         ) : (
         <WebView
           ref={web}
-          source={{ uri: EYES_URL }}
+          source={{ uri: eyesUrl(demo) }}
           onMessage={eyes.handle}
           javaScriptEnabled
           allowsInlineMediaPlayback
@@ -146,30 +173,36 @@ export default function App() {
           style={{ flex: 1, backgroundColor: '#000' }}
         />
         )}
-        {!camReady && <Text style={s.camHint}>Starting camera…</Text>}
+        {demo && !camReady && <Text style={s.camHint}>Starting camera…</Text>}
       </View>
 
-      <View style={s.card} accessible accessibilityRole="text" accessibilityLiveRegion="polite">
-        <Text style={s.title}>Warmer</Text>
-        <Text style={s.status} numberOfLines={3}>{status}</Text>
-      </View>
+      {demo && (
+        <View style={s.card} accessible accessibilityRole="text" accessibilityLiveRegion="polite">
+          <Text style={s.title}>Warmer</Text>
+          <Text style={s.status} numberOfLines={3}>{status}</Text>
+        </View>
+      )}
 
       <Pressable
         onPressIn={startRecording}
         onPressOut={stopRecording}
         accessibilityRole="button"
         accessibilityLabel={recording ? 'Listening. Let go when you are done.' : 'Hold to talk. Say what you want.'}
-        style={({ pressed }) => [s.big, (pressed || recording) && { backgroundColor: C.red }]}
+        style={({ pressed }) => [demo ? s.big : s.bigFull, (pressed || recording) && { backgroundColor: C.red }]}
       >
-        <Text style={s.bigText}>{busy ? 'Reading the screen…' : big}</Text>
+        <Text style={demo ? s.bigText : s.bigFullText}>{busy ? 'Reading the screen…' : big}</Text>
       </Pressable>
 
-      <View style={s.row}>
-        <Btn label="Type" onPress={() => setTyping(true)} hint="Type what you want instead of speaking" />
-        <Btn label="Repeat" onPress={() => flow.repeat()} hint="Repeat the last instruction" />
-        <Btn label="Retry" onPress={() => flow.retry()} hint="Read the screen again" />
-        <Btn label="Reset" onPress={resetDemo} hint="Restart the demo: clears the goal and sends the kiosk back to its start screen" />
-      </View>
+      {demo && (
+        <View style={s.row}>
+          <Btn label="Type" onPress={() => setTyping(true)} hint="Type what you want instead of speaking" />
+          <Btn label="Repeat" onPress={() => flow.repeat()} hint="Repeat the last instruction" />
+          <Btn label="Retry" onPress={() => flow.retry()} hint="Read the screen again" />
+          <Btn label="Reset" onPress={resetDemo} hint="Restart the demo: clears the goal and sends the kiosk back to its start screen" />
+        </View>
+      )}
+
+      {demoToggle}
 
       <Modal visible={typing} transparent animationType="fade" onRequestClose={() => setTyping(false)}>
         <View style={s.modalWrap}>
@@ -316,6 +349,12 @@ const s = StyleSheet.create({
   status: { color: C.text, fontSize: 22, fontWeight: '700', marginTop: 4 },
   big: { flex: 0.8, backgroundColor: C.warm, borderRadius: 26, alignItems: 'center', justifyContent: 'center', padding: 20 },
   bigText: { color: C.bg, fontSize: 30, fontWeight: '900', textAlign: 'center' },
+  // Normal mode: the camera hides behind one button that fills the screen (leaving room for the demo toggle).
+  camHidden: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: 0 },
+  bigFull: { flex: 1, marginTop: 52, backgroundColor: C.warm, borderRadius: 32, alignItems: 'center', justifyContent: 'center', padding: 24 },
+  bigFullText: { color: C.bg, fontSize: 40, fontWeight: '900', textAlign: 'center' },
+  demoToggle: { position: 'absolute', top: 54, right: 14, backgroundColor: C.card, borderRadius: 18, paddingVertical: 9, paddingHorizontal: 14, zIndex: 10 },
+  demoToggleText: { color: C.text, fontSize: 15, fontWeight: '800' },
   consent: { flex: 1, backgroundColor: C.bg, paddingTop: 70, paddingBottom: 40, paddingHorizontal: 22, gap: 18 },
   consentTitle: { color: C.text, fontSize: 32, fontWeight: '900' },
   consentText: { color: C.text, fontSize: 22, lineHeight: 31 },
